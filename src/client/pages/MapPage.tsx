@@ -19,7 +19,9 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => !window.matchMedia("(max-width: 620px)").matches,
+  );
   const [selected, setSelected] = useState<SelectedPlace | null>(null);
   const [collapsedPlaceGroups, setCollapsedPlaceGroups] = useState<Set<string>>(() => new Set());
 

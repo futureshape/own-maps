@@ -8,7 +8,13 @@ function markerContent(color: string): HTMLElement {
   marker.type = "button";
   marker.className = "saved-marker";
   marker.style.setProperty("--marker-color", color);
-  marker.innerHTML = '<span aria-hidden="true">★</span><span class="sr-only">Saved place</span>';
+  marker.innerHTML = `
+    <svg viewBox="0 0 48 58" aria-hidden="true">
+      <path class="saved-marker-pin" d="M24 2C11.85 2 2 11.85 2 24c0 16.5 22 32 22 32s22-15.5 22-32C46 11.85 36.15 2 24 2Z" />
+      <path class="saved-marker-star" d="m24 11.5 3.35 6.79 7.49 1.09-5.42 5.28 1.28 7.46L24 28.6l-6.7 3.52 1.28-7.46-5.42-5.28 7.49-1.09L24 11.5Z" />
+    </svg>
+    <span class="sr-only">Saved place</span>
+  `;
   return marker;
 }
 

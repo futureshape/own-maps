@@ -10,15 +10,19 @@ const mapInput = z.object({
   description: z.string().trim().max(1000).nullable().optional(),
 });
 
-const mapUpdate = mapInput.partial().refine((value) => Object.keys(value).length > 0, {
-  message: "No changes supplied",
-});
+const mapUpdate = mapInput
+  .extend({ publicAccess: z.boolean() })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "No changes supplied",
+  });
 
 type MapRow = {
   id: string;
   title: string;
   description: string | null;
   role: MapRole;
+  public_token: string | null;
   place_count: number;
   updated_at: number;
 };
@@ -29,6 +33,7 @@ function mapFromRow(row: MapRow): MapSummary {
     title: row.title,
     description: row.description,
     role: row.role,
+    publicAccess: row.public_token !== null,
     placeCount: row.place_count,
     updatedAt: row.updated_at,
   };
@@ -37,7 +42,7 @@ function mapFromRow(row: MapRow): MapSummary {
 export async function listMaps(context: RequestContext): Promise<Response> {
   const user = requireUser(context.user);
   const result = await context.env.DB.prepare(
-    `SELECT maps.id, maps.title, maps.description,
+    `SELECT maps.id, maps.title, maps.description, maps.public_token,
             CASE WHEN maps.owner_user_id = ?1 THEN 'owner' ELSE map_members.role END AS role,
             COUNT(map_places.id) AS place_count, maps.updated_at
      FROM maps
@@ -70,6 +75,7 @@ export async function createMap(context: RequestContext): Promise<Response> {
         title: input.title,
         description: input.description ?? null,
         role: "owner",
+        publicAccess: false,
         placeCount: 0,
         updatedAt: now,
       } satisfies MapSummary,
@@ -78,12 +84,14 @@ export async function createMap(context: RequestContext): Promise<Response> {
   );
 }
 
-export async function getMap(context: RequestContext): Promise<Response> {
-  const user = requireUser(context.user);
-  const mapId = context.params.mapId;
-  const role = await getMapRole(context.env, mapId, user.id);
+async function mapDetailResponse(
+  context: RequestContext,
+  mapId: string,
+  role: MapRole,
+  publicView: boolean,
+): Promise<Response> {
   const mapRow = await context.env.DB.prepare(
-    `SELECT id, title, description, updated_at,
+    `SELECT id, title, description, public_token, updated_at,
             (SELECT COUNT(*) FROM map_places WHERE map_id = maps.id) AS place_count
      FROM maps WHERE id = ?`,
   )
@@ -133,8 +141,25 @@ export async function getMap(context: RequestContext): Promise<Response> {
         createdAt: row.created_at,
       }),
     ),
+    publicToken: role === "owner" && !publicView ? mapRow.public_token : null,
+    publicView,
   };
   return json(detail);
+}
+
+export async function getMap(context: RequestContext): Promise<Response> {
+  const user = requireUser(context.user);
+  const mapId = context.params.mapId;
+  const role = await getMapRole(context.env, mapId, user.id);
+  return mapDetailResponse(context, mapId, role, false);
+}
+
+export async function getPublicMap(context: RequestContext): Promise<Response> {
+  const row = await context.env.DB.prepare("SELECT id FROM maps WHERE public_token = ?")
+    .bind(context.params.publicToken)
+    .first<{ id: string }>();
+  if (!row) throw new HttpError(404, "Public map not found");
+  return mapDetailResponse(context, row.id, "viewer", true);
 }
 
 export async function updateMap(context: RequestContext): Promise<Response> {
@@ -142,21 +167,29 @@ export async function updateMap(context: RequestContext): Promise<Response> {
   const role = await getMapRole(context.env, context.params.mapId, user.id);
   requireOwner(role);
   const input = await parseJson(context, mapUpdate);
-  const current = await context.env.DB.prepare("SELECT title, description FROM maps WHERE id = ?")
+  const current = await context.env.DB.prepare(
+    "SELECT title, description, public_token FROM maps WHERE id = ?",
+  )
     .bind(context.params.mapId)
-    .first<{ title: string; description: string | null }>();
+    .first<{ title: string; description: string | null; public_token: string | null }>();
   if (!current) throw new HttpError(404, "Map not found");
+  const publicToken = input.publicAccess === undefined
+    ? current.public_token
+    : input.publicAccess
+      ? current.public_token ?? crypto.randomUUID()
+      : null;
   await context.env.DB.prepare(
-    "UPDATE maps SET title = ?, description = ?, updated_at = ? WHERE id = ?",
+    "UPDATE maps SET title = ?, description = ?, public_token = ?, updated_at = ? WHERE id = ?",
   )
     .bind(
       input.title ?? current.title,
       input.description === undefined ? current.description : input.description,
+      publicToken,
       Date.now(),
       context.params.mapId,
     )
     .run();
-  return json({ ok: true });
+  return json({ ok: true, publicToken });
 }
 
 export async function deleteMap(context: RequestContext): Promise<Response> {

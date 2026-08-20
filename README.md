@@ -15,7 +15,7 @@ flowchart LR
     W --> A["Static assets"]
 ```
 
-Google owns place identity and live place presentation. D1 stores map ownership, memberships, invites, categories, Place IDs, display names, marker coordinates, and user notes. Saved markers and named lists render from D1; loading a map does not resolve every Place ID again.
+Google owns place identity and live place presentation. D1 stores map ownership, memberships, invites, revocable public-link tokens, categories, Place IDs, display names, marker coordinates, and user notes. Saved markers and named lists render from D1; loading a map does not resolve every Place ID again.
 
 ## What works
 
@@ -30,6 +30,7 @@ Google owns place identity and live place presentation. D1 stores map ownership,
 - notes and colour-coded categories
 - owner/editor/viewer permissions checked by the Worker
 - sharing by verified Google-account email, including pending invites
+- optional revocable public links with anonymous, read-only access
 - D1 migrations and GitHub Actions deployment
 
 ## Requirements
@@ -53,14 +54,13 @@ cp .dev.vars.example .dev.vars
 
 Fill in `.env` with browser-facing Google values and `.dev.vars` with the same OAuth client ID for Worker token verification. Neither file is committed.
 
-Apply the schema and start the Worker:
+Start the Worker:
 
 ```bash
-npm run db:migrate:local
 npm run dev
 ```
 
-`npm run dev` builds the React app and runs Wrangler, normally at `http://localhost:8787`. Run `npm run build` again after frontend changes. The local D1 database lives under `.wrangler/`.
+`npm run dev` applies any pending local D1 migrations, builds the React app, and runs Wrangler, normally at `http://localhost:8787`. Run `npm run build` again after frontend changes. The local D1 database lives under `.wrangler/`.
 
 Validation commands:
 
@@ -173,12 +173,13 @@ The persistent Worker `GOOGLE_CLIENT_ID` secret is provisioned once with Wrangle
 - Session cookies are `HttpOnly`, `Secure` in production, `SameSite=Lax`, and scoped to `/`; only a SHA-256 token hash is stored in D1.
 - State-changing requests require JSON and a same-origin `Origin` header. Every mutation repeats authorization in the Worker.
 - Owner, editor, and viewer capabilities are centralised in `permissions.ts`; the UI's role is only presentational.
+- Public links use random UUID tokens, never grant membership, and only reach a read-only GET endpoint. Every mutation still verifies an authenticated owner or editor in the Worker.
 - Login throttling is a best-effort per-isolate guard. For globally consistent high-volume limits, add a Cloudflare Rate Limiting binding rather than application state in KV.
 - The browser never connects directly to D1, and no Google Maps or Places secret is proxied through the Worker.
 
 ## API overview
 
-The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response.
+The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. Disabling the link deletes its token, and enabling it again creates a new URL.
 
 ## Cost assumptions
 
@@ -186,4 +187,4 @@ This design avoids search-on-pan and avoids Place Details lookups while restorin
 
 ## Deliberate v1 boundaries
 
-There is no realtime presence, offline mode, public map discovery, file upload, contacts integration, notification email, Durable Object, KV, R2, queue, or second backend. Pending invites become memberships when the invited verified email next signs in.
+There is no realtime presence, offline mode, public map directory or discovery, file upload, contacts integration, notification email, Durable Object, KV, R2, queue, or second backend. Public maps are unlisted and require their exact link. Pending invites become memberships when the invited verified email next signs in.

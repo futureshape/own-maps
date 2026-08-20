@@ -38,6 +38,13 @@ async function call(path: string, token: string, init: RequestInit = {}) {
   return worker.fetch(new Request(`${origin}${path}`, { ...init, headers }), env);
 }
 
+async function callAnonymous(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("origin", origin);
+  if (init.body) headers.set("content-type", "application/json");
+  return worker.fetch(new Request(`${origin}${path}`, { ...init, headers }), env);
+}
+
 describe("map API authorization and saved marker data", () => {
   beforeEach(resetDb);
 
@@ -95,6 +102,68 @@ describe("map API authorization and saved marker data", () => {
       env,
     );
     expect(response.status).toBe(403);
+  });
+
+  it("creates a revocable anonymous read-only link that only the owner can manage", async () => {
+    await seedUser("owner", "owner@example.com", "owner-token");
+    await seedUser("editor", "editor@example.com", "editor-token");
+    const now = Date.now();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO maps (id, owner_user_id, title, created_at, updated_at) VALUES ('public-map', 'owner', 'Public London', ?, ?)",
+      ).bind(now, now),
+      env.DB.prepare(
+        "INSERT INTO map_members (map_id, user_id, role) VALUES ('public-map', 'editor', 'editor')",
+      ),
+      env.DB.prepare(
+        `INSERT INTO map_places
+           (id, map_id, place_id, display_name, lat, lng, note, created_at)
+         VALUES ('public-place', 'public-map', 'ChIJ-public', 'Public Place', 51.5, -0.12, 'Worth a visit', ?)`,
+      ).bind(now),
+    ]);
+
+    const editorDenied = await call("/api/maps/public-map", "editor-token", {
+      method: "PATCH",
+      body: JSON.stringify({ publicAccess: true }),
+    });
+    expect(editorDenied.status).toBe(403);
+
+    const enabled = await call("/api/maps/public-map", "owner-token", {
+      method: "PATCH",
+      body: JSON.stringify({ publicAccess: true }),
+    });
+    expect(enabled.status).toBe(200);
+    const { publicToken } = await enabled.json<{ publicToken: string }>();
+    expect(publicToken).toMatch(/^[0-9a-f-]{36}$/);
+
+    const publicRead = await callAnonymous(`/api/public/maps/${publicToken}`);
+    expect(publicRead.status).toBe(200);
+    expect(await publicRead.json()).toMatchObject({
+      map: { id: "public-map", role: "viewer", publicAccess: true },
+      places: [{ placeId: "ChIJ-public", displayName: "Public Place", note: "Worth a visit" }],
+      publicToken: null,
+      publicView: true,
+    });
+
+    const anonymousWrite = await callAnonymous("/api/maps/public-map/places", {
+      method: "POST",
+      body: JSON.stringify({ placeId: "ChIJ-nope", displayName: "Nope", lat: 1, lng: 2 }),
+    });
+    expect(anonymousWrite.status).toBe(401);
+
+    const disabled = await call("/api/maps/public-map", "owner-token", {
+      method: "PATCH",
+      body: JSON.stringify({ publicAccess: false }),
+    });
+    expect(await disabled.json()).toMatchObject({ publicToken: null });
+    expect((await callAnonymous(`/api/public/maps/${publicToken}`)).status).toBe(404);
+
+    const reenabled = await call("/api/maps/public-map", "owner-token", {
+      method: "PATCH",
+      body: JSON.stringify({ publicAccess: true }),
+    });
+    const next = await reenabled.json<{ publicToken: string }>();
+    expect(next.publicToken).not.toBe(publicToken);
   });
 
   it("invalidates sessions on logout", async () => {

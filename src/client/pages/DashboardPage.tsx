@@ -49,7 +49,7 @@ export function DashboardPage({ navigate }: { navigate: (path: string) => void }
             {maps.map((map, index) => (
               <button className="map-card" key={map.id} onClick={() => navigate(`/maps/${map.id}`)}>
                 <div className={`map-card-art art-${index % 4}`}><span>★</span><i/><b/></div>
-                <div className="map-card-copy"><span className="role-badge">{map.role}</span><h2>{map.title}</h2><p>{map.description || "A personal map waiting for more places."}</p><div><span>{map.placeCount} {map.placeCount === 1 ? "place" : "places"}</span><ArrowIcon /></div></div>
+                <div className="map-card-copy"><span className="role-badge">{map.role}{map.publicAccess ? " · public" : ""}</span><h2>{map.title}</h2><p>{map.description || "A personal map waiting for more places."}</p><div><span>{map.placeCount} {map.placeCount === 1 ? "place" : "places"}</span><ArrowIcon /></div></div>
               </button>
             ))}
             <button className="new-map-card" onClick={() => setCreating(true)}><span><PlusIcon /></span><strong>Create another map</strong></button>

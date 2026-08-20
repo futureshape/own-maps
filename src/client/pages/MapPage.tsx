@@ -8,7 +8,12 @@ import { Modal } from "../components/Modal";
 import { PlaceDetailsPanel } from "../components/PlaceDetailsPanel";
 import { ShareDialog } from "../components/ShareDialog";
 
-export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: string) => void }) {
+type MapPageProps = (
+  | { mapId: string; publicToken?: never }
+  | { mapId?: never; publicToken: string }
+) & { navigate: (path: string) => void };
+
+export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
   const [detail, setDetail] = useState<MapDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -18,18 +23,24 @@ export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: s
   const [selected, setSelected] = useState<SelectedPlace | null>(null);
 
   const refresh = useCallback(async () => {
-    const next = await api.map(mapId);
+    const next = publicToken
+      ? await api.publicMap(publicToken)
+      : mapId
+        ? await api.map(mapId)
+        : null;
+    if (!next) throw new Error("No map identifier was provided");
     setDetail(next);
-  }, [mapId]);
+  }, [mapId, publicToken]);
 
   useEffect(() => {
     void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : "Could not load map"));
   }, [refresh]);
 
   const add = useCallback(async (selected: SelectedPlace) => {
+    if (!detail) throw new Error("Map is not loaded");
     if (!selected.location) throw new Error("Google did not provide a location for this place");
     if (!selected.displayName) throw new Error("Google did not provide a display name for this place");
-    const { place } = await api.addPlace(mapId, {
+    const { place } = await api.addPlace(detail.map.id, {
       placeId: selected.placeId,
       displayName: selected.displayName,
       lat: selected.location.lat,
@@ -40,38 +51,41 @@ export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: s
       map: { ...current.map, placeCount: current.map.placeCount + 1 },
       places: [...current.places, place],
     } : current);
-  }, [mapId]);
+  }, [detail]);
 
   const update = useCallback(async (placeId: string, input: { note: string | null; categoryId: string | null }) => {
-    await api.updatePlace(mapId, placeId, input);
+    if (!detail) throw new Error("Map is not loaded");
+    await api.updatePlace(detail.map.id, placeId, input);
     setDetail((current) => current ? {
       ...current,
       places: current.places.map((place) => place.placeId === placeId ? { ...place, ...input } : place),
     } : current);
-  }, [mapId]);
+  }, [detail]);
 
   const remove = useCallback(async (placeId: string) => {
-    await api.deletePlace(mapId, placeId);
+    if (!detail) throw new Error("Map is not loaded");
+    await api.deletePlace(detail.map.id, placeId);
     setDetail((current) => current ? {
       ...current,
       map: { ...current.map, placeCount: Math.max(0, current.map.placeCount - 1) },
       places: current.places.filter((place) => place.placeId !== placeId),
     } : current);
     setSelected(null);
-  }, [mapId]);
+  }, [detail]);
 
   const selectPlace = useCallback((place: SelectedPlace) => {
     setSelected(place);
     if (window.matchMedia("(max-width: 620px)").matches) setSidebarOpen(false);
     const saved = detail?.places.find((item) => item.placeId === place.placeId);
-    if (!saved || saved.displayName) return;
+    const canEdit = detail?.map.role === "owner" || detail?.map.role === "editor";
+    if (!saved || saved.displayName || !canEdit || !detail) return;
     void (async () => {
       try {
         const { Place } = (await google.maps.importLibrary("places")) as google.maps.PlacesLibrary;
         const googlePlace = new Place({ id: place.placeId });
         await googlePlace.fetchFields({ fields: ["displayName"] });
         if (!googlePlace.displayName) return;
-        await api.updatePlace(mapId, place.placeId, { displayName: googlePlace.displayName });
+        await api.updatePlace(detail.map.id, place.placeId, { displayName: googlePlace.displayName });
         setDetail((current) => current ? {
           ...current,
           places: current.places.map((item) => item.placeId === place.placeId
@@ -85,10 +99,10 @@ export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: s
         // The UI Kit card can still render the place; retry backfill next selection.
       }
     })();
-  }, [detail, mapId]);
+  }, [detail]);
 
   if (error) {
-    return <main className="fatal-state"><MapIcon/><h1>We couldn’t open this map</h1><p>{error}</p><button className="button primary" onClick={() => navigate("/")}>Back to your maps</button></main>;
+    return <main className="fatal-state"><MapIcon/><h1>We couldn’t open this map</h1><p>{error}</p><button className="button primary" onClick={() => navigate("/")}>Back to home</button></main>;
   }
   if (!detail) return <main className="loading-state"><span className="loader"/><p>Unfolding your map…</p></main>;
 
@@ -118,7 +132,7 @@ export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: s
           <a className="brand compact-brand" href="/" onClick={(event) => { event.preventDefault(); navigate("/"); }}><span className="brand-mark"><MapIcon/></span>Pinboard</a>
         </header>
         <div className="map-title-block">
-          <span className="role-badge">{detail.map.role}</span>
+          <span className="role-badge">{detail.publicView ? "Public view" : `${detail.map.role}${detail.map.publicAccess ? " · public" : ""}`}</span>
           <h1>{detail.map.title}</h1>
           {detail.map.description && <p>{detail.map.description}</p>}
           <div className="map-meta"><span>★</span>{detail.places.length} saved {detail.places.length === 1 ? "place" : "places"}</div>
@@ -147,9 +161,13 @@ export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: s
             ))}
           </div>
         </div>
-        {!detail.places.length && <div className="sidebar-help">
+        {!detail.places.length && canEdit && <div className="sidebar-help">
           <div className="help-star">★</div>
           <div><strong>Add places from the map</strong><p>Search above, or click any Google place, then choose “Add to map”.</p></div>
+        </div>}
+        {!detail.places.length && !canEdit && <div className="sidebar-help">
+          <div className="help-star">★</div>
+          <div><strong>No saved places yet</strong><p>This map is view-only. Its editors haven’t added any places.</p></div>
         </div>}
         <footer className="sidebar-footer">
           {detail.map.role === "owner" && <button className="sidebar-action" onClick={() => setShareOpen(true)}><ShareIcon/> Share map</button>}
@@ -173,8 +191,17 @@ export function MapPage({ mapId, navigate }: { mapId: string; navigate: (path: s
         )}
         {detail.map.role === "owner" && <button className="floating-share button secondary" onClick={() => setShareOpen(true)}><ShareIcon/> Share</button>}
       </section>
-      {categoriesOpen && <CategoryDialog mapId={mapId} categories={detail.categories} onChange={refresh} onClose={() => setCategoriesOpen(false)}/>} 
-      {shareOpen && <ShareDialog mapId={mapId} onClose={() => setShareOpen(false)}/>} 
+      {categoriesOpen && <CategoryDialog mapId={detail.map.id} categories={detail.categories} onChange={refresh} onClose={() => setCategoriesOpen(false)}/>}
+      {shareOpen && <ShareDialog
+        mapId={detail.map.id}
+        publicToken={detail.publicToken}
+        onPublicTokenChange={(nextPublicToken) => setDetail((current) => current ? {
+          ...current,
+          map: { ...current.map, publicAccess: nextPublicToken !== null },
+          publicToken: nextPublicToken,
+        } : current)}
+        onClose={() => setShareOpen(false)}
+      />}
       {settingsOpen && <MapSettings detail={detail} onSaved={refresh} onDeleted={() => navigate("/")} onClose={() => setSettingsOpen(false)}/>} 
     </main>
   );

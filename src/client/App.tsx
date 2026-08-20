@@ -23,14 +23,19 @@ export function App() {
     setPath(next);
   }, []);
 
+  const publicToken = path.match(/^\/public\/([^/]+)$/)?.[1];
+
   useEffect(() => {
-    if (!loading && !user && path !== "/") {
+    if (!loading && !user && path !== "/" && !publicToken) {
       window.history.replaceState({}, "", "/");
       setPath("/");
     }
-  }, [loading, user, path]);
+  }, [loading, user, path, publicToken]);
 
   if (loading) return <main className="loading-state"><span className="loader"/><p>Finding your maps…</p></main>;
+  if (publicToken) {
+    return <MapPage publicToken={decodeURIComponent(publicToken)} navigate={navigate}/>;
+  }
   if (!user) return <LandingPage />;
   const mapMatch = path.match(/^\/maps\/([^/]+)$/);
   if (mapMatch) return <MapPage mapId={decodeURIComponent(mapMatch[1])} navigate={navigate}/>;

@@ -33,8 +33,13 @@ export const api = {
   createMap: (input: { title: string; description?: string | null }) =>
     request<{ map: MapSummary }>("/api/maps", { method: "POST", body: JSON.stringify(input) }),
   map: (id: string) => request<MapDetail>(`/api/maps/${encodeURIComponent(id)}`),
-  updateMap: (id: string, input: { title?: string; description?: string | null }) =>
-    request<{ ok: true }>(`/api/maps/${encodeURIComponent(id)}`, {
+  publicMap: (publicToken: string) =>
+    request<MapDetail>(`/api/public/maps/${encodeURIComponent(publicToken)}`),
+  updateMap: (
+    id: string,
+    input: { title?: string; description?: string | null; publicAccess?: boolean },
+  ) =>
+    request<{ ok: true; publicToken: string | null }>(`/api/maps/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
     }),

@@ -4,13 +4,28 @@ import { api } from "../api";
 import { Modal } from "./Modal";
 import { TrashIcon } from "./Icons";
 
-export function ShareDialog({ mapId, onClose }: { mapId: string; onClose: () => void }) {
+export function ShareDialog({
+  mapId,
+  publicToken: initialPublicToken,
+  onPublicTokenChange,
+  onClose,
+}: {
+  mapId: string;
+  publicToken: string | null;
+  onPublicTokenChange: (publicToken: string | null) => void;
+  onClose: () => void;
+}) {
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"editor" | "viewer">("editor");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publicToken, setPublicToken] = useState(initialPublicToken);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const publicUrl = publicToken
+    ? `${window.location.origin}/public/${encodeURIComponent(publicToken)}`
+    : null;
 
   const refresh = useCallback(async () => {
     const response = await api.sharing(mapId);
@@ -21,6 +36,33 @@ export function ShareDialog({ mapId, onClose }: { mapId: string; onClose: () => 
   useEffect(() => {
     void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : "Could not load sharing"));
   }, [refresh]);
+
+  useEffect(() => setPublicToken(initialPublicToken), [initialPublicToken]);
+
+  const togglePublicAccess = async () => {
+    setBusy(true);
+    setError(null);
+    setCopyMessage(null);
+    try {
+      const response = await api.updateMap(mapId, { publicAccess: !publicToken });
+      setPublicToken(response.publicToken);
+      onPublicTokenChange(response.publicToken);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not update public access");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyPublicLink = async () => {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopyMessage("Link copied");
+    } catch {
+      setCopyMessage("Could not copy automatically. Select and copy the link.");
+    }
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -76,7 +118,36 @@ export function ShareDialog({ mapId, onClose }: { mapId: string; onClose: () => 
   return (
     <Modal title="Share this map" onClose={onClose}>
       <div className="modal-body">
-        <p className="muted">Invite someone by the email on their Google account. They’ll get access when they sign in.</p>
+        <section className="public-sharing" aria-labelledby="public-sharing-title">
+          <div>
+            <h3 id="public-sharing-title">Public link</h3>
+            <p>Anyone with the link can view this map without signing in. They cannot make changes.</p>
+          </div>
+          <label className="public-checkbox">
+            <input
+              type="checkbox"
+              checked={publicToken !== null}
+              disabled={busy}
+              onChange={() => void togglePublicAccess()}
+            />
+            Enable public link
+          </label>
+          {publicUrl && (
+            <div className="public-link-row">
+              <input
+                aria-label="Public map link"
+                readOnly
+                value={publicUrl}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button type="button" className="button secondary" onClick={() => void copyPublicLink()}>
+                Copy link
+              </button>
+            </div>
+          )}
+          {copyMessage && <p className="copy-message" role="status">{copyMessage}</p>}
+        </section>
+        <p className="muted sharing-intro">Or invite someone by the email on their Google account. They’ll get access when they sign in.</p>
         <form className="invite-form" onSubmit={submit}>
           <label className="field grow">
             <span>Email</span>

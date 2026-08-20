@@ -1,6 +1,6 @@
 import { login, logout, me } from "./api/auth";
 import { createCategory, deleteCategory, updateCategory } from "./api/categories";
-import { createMap, deleteMap, getMap, listMaps, updateMap } from "./api/maps";
+import { createMap, deleteMap, getMap, getPublicMap, listMaps, updateMap } from "./api/maps";
 import { createPlace, deletePlace, updatePlace } from "./api/places";
 import {
   deleteInvite,
@@ -30,6 +30,7 @@ router
   .on("GET", "/api/me", me)
   .on("GET", "/api/maps", listMaps)
   .on("POST", "/api/maps", createMap)
+  .on("GET", "/api/public/maps/:publicToken", getPublicMap)
   .on("GET", "/api/maps/:mapId", getMap)
   .on("PATCH", "/api/maps/:mapId", updateMap)
   .on("DELETE", "/api/maps/:mapId", deleteMap)

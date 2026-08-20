@@ -12,6 +12,7 @@ export interface MapSummary {
   title: string;
   description: string | null;
   role: MapRole;
+  publicAccess: boolean;
   placeCount: number;
   updatedAt: number;
 }
@@ -38,6 +39,8 @@ export interface MapDetail {
   map: MapSummary;
   categories: Category[];
   places: SavedPlace[];
+  publicToken: string | null;
+  publicView: boolean;
 }
 
 export interface Member {

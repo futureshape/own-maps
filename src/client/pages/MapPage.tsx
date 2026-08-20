@@ -209,7 +209,7 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
       </aside>
       <section className="map-workspace">
         {!sidebarOpen && <button className="sidebar-reopen" aria-label="Show sidebar" onClick={() => setSidebarOpen(true)}><PanelLeftOpenIcon/></button>}
-        <MapCanvas places={detail.places} categories={detail.categories} canEdit={canEdit} onSelect={selectPlace}/>
+        <MapCanvas places={detail.places} categories={detail.categories} canEdit={canEdit} onSelect={selectPlace} selected={selected}/>
         {selected && (
           <PlaceDetailsPanel
             selected={selected}

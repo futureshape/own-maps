@@ -22,11 +22,13 @@ export function MapCanvas({
   categories,
   canEdit,
   onSelect,
+  selected,
 }: {
   places: SavedPlace[];
   categories: Category[];
   canEdit: boolean;
   onSelect: (place: SelectedPlace) => void;
+  selected: SelectedPlace | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -36,6 +38,8 @@ export function MapCanvas({
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const selectedPlaceId = selected?.placeId;
+  const selectedLocation = selected?.location;
 
   const resolveSelection = useCallback(async (selected: SelectedPlace) => {
     const saved = places.find((place) => place.placeId === selected.placeId);
@@ -149,6 +153,35 @@ export function MapCanvas({
       markersRef.current = [];
     };
   }, [map, places, categories, onSelect]);
+
+  useEffect(() => {
+    if (!map || !selectedPlaceId) return;
+    if (selectedLocation) map.setCenter(selectedLocation);
+
+    let observer: ResizeObserver | null = null;
+    let panelSize = 0;
+    const frame = window.requestAnimationFrame(() => {
+      const panel = document.querySelector<HTMLElement>(".place-details-sidebar");
+      if (!panel) return;
+
+      const keepSelectedPlaceVisible = () => {
+        const isMobile = window.matchMedia("(max-width: 620px)").matches;
+        const nextPanelSize = isMobile ? panel.clientHeight : panel.clientWidth;
+        const offset = Math.round((nextPanelSize - panelSize) / 2);
+        if (offset > 0) map.panBy(isMobile ? 0 : offset, isMobile ? offset : 0);
+        panelSize = nextPanelSize;
+      };
+
+      keepSelectedPlaceVisible();
+      observer = new ResizeObserver(keepSelectedPlaceVisible);
+      observer.observe(panel);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [map, selectedLocation, selectedPlaceId]);
 
   const handleSearchSelect = useCallback((place: SelectedPlace) => {
     void resolveSelection(place);

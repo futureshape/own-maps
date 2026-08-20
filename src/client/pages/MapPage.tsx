@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { MapDetail, SelectedPlace } from "../../shared/types";
 import { api } from "../api";
 import { CategoryDialog } from "../components/CategoryDialog";
-import { BackIcon, LayersIcon, MapIcon, MoreIcon, ShareIcon, TrashIcon } from "../components/Icons";
+import { BackIcon, ChevronDownIcon, LayersIcon, MapIcon, MoreIcon, ShareIcon, TrashIcon } from "../components/Icons";
 import { MapCanvas } from "../components/MapCanvas";
 import { Modal } from "../components/Modal";
 import { PlaceDetailsPanel } from "../components/PlaceDetailsPanel";
@@ -21,6 +21,7 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selected, setSelected] = useState<SelectedPlace | null>(null);
+  const [collapsedPlaceGroups, setCollapsedPlaceGroups] = useState<Set<string>>(() => new Set());
 
   const refresh = useCallback(async () => {
     const next = publicToken
@@ -123,6 +124,14 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
   const selectedSavedPlace = selected
     ? detail.places.find((place) => place.placeId === selected.placeId)
     : undefined;
+  const togglePlaceGroup = (groupId: string) => {
+    setCollapsedPlaceGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
 
   return (
     <main className={`map-page ${sidebarOpen ? "sidebar-open" : ""}`}>
@@ -140,25 +149,46 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
         <div className="sidebar-section places-section">
           <div className="section-heading"><h2>Places</h2>{canEdit && <button className="text-button" onClick={() => setCategoriesOpen(true)}>Manage categories</button>}</div>
           <div className="places-by-category">
-            {placeGroups.map((group) => (
-              <section className="place-group" key={group.id ?? "uncategorised"}>
-                <header><span className="category-dot" style={{ background: group.colour }}/><h3>{group.name}</h3><b>{group.places.length}</b></header>
-                {group.places.map((place) => (
-                  <button
-                    className={selected?.placeId === place.placeId ? "active" : ""}
-                    key={place.id}
-                    onClick={() => selectPlace({
-                      placeId: place.placeId,
-                      displayName: place.displayName ?? undefined,
-                      location: { lat: place.lat, lng: place.lng },
-                    })}
-                  >
-                    <span>{place.displayName ?? "Saved place"}</span>
-                    {place.note && <small>{place.note}</small>}
-                  </button>
-                ))}
-              </section>
-            ))}
+            {placeGroups.map((group) => {
+              const groupId = group.id ?? "uncategorised";
+              const isExpanded = !collapsedPlaceGroups.has(groupId);
+              const contentId = `place-group-${groupId}`;
+              return (
+                <section className="place-group" key={groupId}>
+                  <header>
+                    <h3>
+                      <button
+                        className="place-group-toggle"
+                        aria-expanded={isExpanded}
+                        aria-controls={contentId}
+                        onClick={() => togglePlaceGroup(groupId)}
+                      >
+                        <span className="category-dot" style={{ background: group.colour }}/>
+                        <span>{group.name}</span>
+                        <b>{group.places.length}</b>
+                        <ChevronDownIcon />
+                      </button>
+                    </h3>
+                  </header>
+                  <div className="place-group-places" id={contentId} hidden={!isExpanded}>
+                    {group.places.map((place) => (
+                      <button
+                        className={selected?.placeId === place.placeId ? "active" : ""}
+                        key={place.id}
+                        onClick={() => selectPlace({
+                          placeId: place.placeId,
+                          displayName: place.displayName ?? undefined,
+                          location: { lat: place.lat, lng: place.lng },
+                        })}
+                      >
+                        <span>{place.displayName ?? "Saved place"}</span>
+                        {place.note && <small>{place.note}</small>}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </div>
         {!detail.places.length && canEdit && <div className="sidebar-help">

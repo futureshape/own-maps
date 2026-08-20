@@ -20,3 +20,4 @@ export const SearchIcon = (props: Props) => <Icon {...props}><circle cx="11" cy=
 export const ArrowIcon = (props: Props) => <Icon {...props}><path d="m9 18 6-6-6-6"/></Icon>;
 export const TrashIcon = (props: Props) => <Icon {...props}><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></Icon>;
 export const BackIcon = (props: Props) => <Icon {...props}><path d="m15 18-6-6 6-6"/></Icon>;
+export const ChevronDownIcon = (props: Props) => <Icon {...props}><path d="m6 9 6 6 6-6"/></Icon>;

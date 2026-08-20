@@ -138,11 +138,37 @@ describe("map API authorization and saved marker data", () => {
 
     const publicRead = await callAnonymous(`/api/public/maps/${publicToken}`);
     expect(publicRead.status).toBe(200);
+    expect(publicRead.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=30");
     expect(await publicRead.json()).toMatchObject({
       map: { id: "public-map", role: "viewer", publicAccess: true },
       places: [{ placeId: "ChIJ-public", displayName: "Public Place", note: "Worth a visit" }],
       publicToken: null,
       publicView: true,
+    });
+
+    const renamed = await call("/api/maps/public-map", "owner-token", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "Renamed public map" }),
+    });
+    expect(renamed.status).toBe(200);
+    expect(await (await callAnonymous(`/api/public/maps/${publicToken}`)).json()).toMatchObject({
+      map: { title: "Renamed public map" },
+    });
+
+    const addedAfterCache = await call("/api/maps/public-map/places", "owner-token", {
+      method: "POST",
+      body: JSON.stringify({
+        placeId: "ChIJ-after-cache",
+        displayName: "Added after cache",
+        lat: 51.51,
+        lng: -0.13,
+      }),
+    });
+    expect(addedAfterCache.status).toBe(201);
+    expect(await (await callAnonymous(`/api/public/maps/${publicToken}`)).json()).toMatchObject({
+      places: expect.arrayContaining([
+        expect.objectContaining({ placeId: "ChIJ-after-cache", displayName: "Added after cache" }),
+      ]),
     });
 
     const anonymousWrite = await callAnonymous("/api/maps/public-map/places", {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Category, SavedPlace, SelectedPlace } from "../../shared/types";
+import { loadGoogleMaps } from "../google";
 import { CloseIcon } from "./Icons";
 import { PlaceCard } from "./PlaceCard";
 
@@ -26,6 +27,22 @@ export function PlaceDetailsPanel({
   const [categoryId, setCategoryId] = useState(savedPlace?.categoryId ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [placeUiState, setPlaceUiState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let disposed = false;
+    void loadGoogleMaps()
+      .then((mapsApi) => mapsApi.maps.importLibrary("places"))
+      .then(() => {
+        if (!disposed) setPlaceUiState("ready");
+      })
+      .catch(() => {
+        if (!disposed) setPlaceUiState("error");
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
     setNote(savedPlace?.note ?? "");
@@ -56,7 +73,13 @@ export function PlaceDetailsPanel({
         <button className="icon-button" aria-label="Close place details" onClick={onClose}><CloseIcon /></button>
       </header>
       <div className="place-details-scroll">
-        <PlaceCard placeId={selected.placeId} />
+        {placeUiState === "ready" ? (
+          <PlaceCard placeId={selected.placeId} />
+        ) : (
+          <p className={placeUiState === "error" ? "popup-message" : "popup-hint"}>
+            {placeUiState === "error" ? "Google place details could not load." : "Loading Google place details…"}
+          </p>
+        )}
         <div className="place-actions">
           {!savedPlace ? (
             canEdit ? (

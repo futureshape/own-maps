@@ -8,7 +8,6 @@ export async function loadGoogleMaps(): Promise<typeof google> {
   loader ??= new Loader({
     apiKey,
     version: "beta",
-    libraries: ["places", "marker"],
   });
   await loader.load();
   return google;

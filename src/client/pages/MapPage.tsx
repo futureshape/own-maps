@@ -176,7 +176,7 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
       </aside>
       <section className="map-workspace">
         <button className="sidebar-toggle" aria-label="Toggle map details" onClick={() => setSidebarOpen((value) => !value)}><LayersIcon/></button>
-        <MapCanvas places={detail.places} categories={detail.categories} onSelect={selectPlace}/>
+        <MapCanvas places={detail.places} categories={detail.categories} canEdit={canEdit} onSelect={selectPlace}/>
         {selected && (
           <PlaceDetailsPanel
             selected={selected}

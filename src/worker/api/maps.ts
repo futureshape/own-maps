@@ -3,6 +3,12 @@ import type { Category, MapDetail, MapRole, MapSummary, SavedPlace } from "../..
 import { getMapRole, requireUser } from "../db";
 import { HttpError, json, noContent, parseJson } from "../http";
 import { requireOwner } from "../permissions";
+import {
+  PUBLIC_MAP_CACHE_CONTROL,
+  invalidatePublicMapCache,
+  readPublicMapCache,
+  writePublicMapCache,
+} from "../public-map-cache";
 import type { RequestContext } from "../types";
 
 const mapInput = z.object({
@@ -26,6 +32,26 @@ type MapRow = {
   place_count: number;
   updated_at: number;
 };
+
+type MapDetailRow = Omit<MapRow, "role">;
+
+const mapDetailColumns = `id, title, description, public_token, updated_at,
+  (SELECT COUNT(*) FROM map_places WHERE map_id = maps.id) AS place_count`;
+
+async function getMapRowById(context: RequestContext, mapId: string): Promise<MapDetailRow | null> {
+  return context.env.DB.prepare(`SELECT ${mapDetailColumns} FROM maps WHERE id = ?`)
+    .bind(mapId)
+    .first<MapDetailRow>();
+}
+
+async function getMapRowByPublicToken(
+  context: RequestContext,
+  publicToken: string,
+): Promise<MapDetailRow | null> {
+  return context.env.DB.prepare(`SELECT ${mapDetailColumns} FROM maps WHERE public_token = ?`)
+    .bind(publicToken)
+    .first<MapDetailRow>();
+}
 
 function mapFromRow(row: MapRow): MapSummary {
   return {
@@ -86,18 +112,11 @@ export async function createMap(context: RequestContext): Promise<Response> {
 
 async function mapDetailResponse(
   context: RequestContext,
-  mapId: string,
+  mapRow: MapDetailRow,
   role: MapRole,
   publicView: boolean,
 ): Promise<Response> {
-  const mapRow = await context.env.DB.prepare(
-    `SELECT id, title, description, public_token, updated_at,
-            (SELECT COUNT(*) FROM map_places WHERE map_id = maps.id) AS place_count
-     FROM maps WHERE id = ?`,
-  )
-    .bind(mapId)
-    .first<Omit<MapRow, "role">>();
-  if (!mapRow) throw new HttpError(404, "Map not found");
+  const mapId = mapRow.id;
 
   const [categoryRows, placeRows] = await Promise.all([
     context.env.DB.prepare(
@@ -144,22 +163,29 @@ async function mapDetailResponse(
     publicToken: role === "owner" && !publicView ? mapRow.public_token : null,
     publicView,
   };
-  return json(detail);
+  return json(detail, publicView ? { headers: { "cache-control": PUBLIC_MAP_CACHE_CONTROL } } : {});
 }
 
 export async function getMap(context: RequestContext): Promise<Response> {
   const user = requireUser(context.user);
   const mapId = context.params.mapId;
-  const role = await getMapRole(context.env, mapId, user.id);
-  return mapDetailResponse(context, mapId, role, false);
+  const [role, mapRow] = await Promise.all([
+    getMapRole(context.env, mapId, user.id),
+    getMapRowById(context, mapId),
+  ]);
+  if (!mapRow) throw new HttpError(404, "Map not found");
+  return mapDetailResponse(context, mapRow, role, false);
 }
 
 export async function getPublicMap(context: RequestContext): Promise<Response> {
-  const row = await context.env.DB.prepare("SELECT id FROM maps WHERE public_token = ?")
-    .bind(context.params.publicToken)
-    .first<{ id: string }>();
-  if (!row) throw new HttpError(404, "Public map not found");
-  return mapDetailResponse(context, row.id, "viewer", true);
+  const publicToken = context.params.publicToken;
+  const cached = await readPublicMapCache(context, publicToken);
+  if (cached) return cached;
+  const mapRow = await getMapRowByPublicToken(context, publicToken);
+  if (!mapRow) throw new HttpError(404, "Public map not found");
+  const response = await mapDetailResponse(context, mapRow, "viewer", true);
+  await writePublicMapCache(context, publicToken, response.clone());
+  return response;
 }
 
 export async function updateMap(context: RequestContext): Promise<Response> {
@@ -189,6 +215,7 @@ export async function updateMap(context: RequestContext): Promise<Response> {
       context.params.mapId,
     )
     .run();
+  await invalidatePublicMapCache(context, current.public_token);
   return json({ ok: true, publicToken });
 }
 
@@ -196,6 +223,10 @@ export async function deleteMap(context: RequestContext): Promise<Response> {
   const user = requireUser(context.user);
   const role = await getMapRole(context.env, context.params.mapId, user.id);
   requireOwner(role);
+  const current = await context.env.DB.prepare("SELECT public_token FROM maps WHERE id = ?")
+    .bind(context.params.mapId)
+    .first<{ public_token: string | null }>();
   await context.env.DB.prepare("DELETE FROM maps WHERE id = ?").bind(context.params.mapId).run();
+  await invalidatePublicMapCache(context, current?.public_token ?? null);
   return noContent();
 }

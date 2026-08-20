@@ -4,8 +4,7 @@ import { loadGoogleMaps } from "../google";
 import { PlaceSearch } from "./PlaceSearch";
 
 function markerContent(color: string): HTMLElement {
-  const marker = document.createElement("button");
-  marker.type = "button";
+  const marker = document.createElement("div");
   marker.className = "saved-marker";
   marker.style.setProperty("--marker-color", color);
   marker.innerHTML = `
@@ -21,10 +20,12 @@ function markerContent(color: string): HTMLElement {
 export function MapCanvas({
   places,
   categories,
+  canEdit,
   onSelect,
 }: {
   places: SavedPlace[];
   categories: Category[];
+  canEdit: boolean;
   onSelect: (place: SelectedPlace) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -73,10 +74,6 @@ export function MapCanvas({
       .then(async () => {
         if (disposed || !host.current) return;
         const { Map } = (await google.maps.importLibrary("maps")) as google.maps.MapsLibrary;
-        await Promise.all([
-          google.maps.importLibrary("marker"),
-          google.maps.importLibrary("places"),
-        ]);
         if (disposed || !host.current) return;
         const instance = new Map(host.current, {
           center: { lat: 51.5074, lng: -0.1278 },
@@ -85,17 +82,19 @@ export function MapCanvas({
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: true,
-          clickableIcons: true,
+          clickableIcons: canEdit,
           gestureHandling: "greedy",
         });
-        mapClick = instance.addListener("click", (event: google.maps.MapMouseEvent & { placeId?: string; stop?: () => void }) => {
-          if (!event.placeId) return;
-          event.stop?.();
-          void selectionHandler.current({
-            placeId: event.placeId,
-            location: event.latLng?.toJSON(),
+        if (canEdit) {
+          mapClick = instance.addListener("click", (event: google.maps.MapMouseEvent & { placeId?: string; stop?: () => void }) => {
+            if (!event.placeId) return;
+            event.stop?.();
+            void selectionHandler.current({
+              placeId: event.placeId,
+              location: event.latLng?.toJSON(),
+            });
           });
-        });
+        }
         mapRef.current = instance;
         setMap(instance);
       })
@@ -106,7 +105,7 @@ export function MapCanvas({
       markersRef.current.forEach((marker) => { marker.map = null; });
       mapRef.current = null;
     };
-  }, []);
+  }, [canEdit]);
 
   useEffect(() => {
     if (!map) return;
@@ -125,8 +124,9 @@ export function MapCanvas({
           title: place.displayName ?? place.note ?? "Saved place",
           zIndex: 10,
           collisionBehavior: google.maps.CollisionBehavior.REQUIRED_AND_HIDES_OPTIONAL,
+          gmpClickable: true,
         });
-        marker.addListener("click", () =>
+        marker.addEventListener("gmp-click", () =>
           void selectionHandler.current({
             placeId: place.placeId,
             displayName: place.displayName ?? undefined,
@@ -157,7 +157,7 @@ export function MapCanvas({
   return (
     <div className="map-canvas-wrap">
       <div ref={host} className="map-canvas" aria-label="Interactive Google Map" />
-      {map && <PlaceSearch map={map} onSelect={handleSearchSelect} />}
+      {map && canEdit && <PlaceSearch map={map} onSelect={handleSearchSelect} />}
       <div className="map-legend"><span className="legend-star">★</span> Saved place</div>
       {selectionError && <div className="map-toast" role="alert">{selectionError}</div>}
       {loadError && (

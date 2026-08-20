@@ -17,6 +17,7 @@ export interface RequestContext {
   env: Env;
   url: URL;
   params: Record<string, string>;
+  executionCtx?: ExecutionContext;
   user?: AuthUser;
   sessionHash?: string;
 }

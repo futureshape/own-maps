@@ -56,14 +56,15 @@ function withSecurityHeaders(response: Response): Response {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, executionCtx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
 
     try {
-      const auth = await authenticate(request, env);
-      const baseContext: Omit<RequestContext, "params"> = { request, env, url, ...auth };
+      const publicMapRead = request.method === "GET" && /^\/api\/public\/maps\/[^/]+$/.test(url.pathname);
+      const auth = publicMapRead ? {} : await authenticate(request, env);
+      const baseContext: Omit<RequestContext, "params"> = { request, env, url, executionCtx, ...auth };
       requireSameOrigin({ ...baseContext, params: {} });
       const response = await router.route(baseContext);
       return withSecurityHeaders(response ?? json({ error: "Not found" }, { status: 404 }));
@@ -71,4 +72,4 @@ export default {
       return withSecurityHeaders(handleError(error));
     }
   },
-};
+} satisfies ExportedHandler<Env>;

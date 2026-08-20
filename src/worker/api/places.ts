@@ -3,6 +3,7 @@ import type { SavedPlace } from "../../shared/types";
 import { getMapRole, requireUser, touchMap } from "../db";
 import { HttpError, json, noContent, parseJson } from "../http";
 import { requireEdit } from "../permissions";
+import { invalidateMapPublicCache } from "../public-map-cache";
 import type { RequestContext } from "../types";
 
 const categoryId = z.string().uuid().nullable();
@@ -57,6 +58,7 @@ export async function createPlace(context: RequestContext): Promise<Response> {
     )
     .run();
   await touchMap(context.env, context.params.mapId);
+  await invalidateMapPublicCache(context, context.params.mapId);
   const place: SavedPlace = {
     id,
     placeId: input.placeId,
@@ -96,6 +98,7 @@ export async function updatePlace(context: RequestContext): Promise<Response> {
     )
     .run();
   await touchMap(context.env, context.params.mapId);
+  await invalidateMapPublicCache(context, context.params.mapId);
   return json({ ok: true });
 }
 
@@ -109,5 +112,6 @@ export async function deletePlace(context: RequestContext): Promise<Response> {
     .run();
   if (!result.meta.changes) throw new HttpError(404, "Saved place not found");
   await touchMap(context.env, context.params.mapId);
+  await invalidateMapPublicCache(context, context.params.mapId);
   return noContent();
 }

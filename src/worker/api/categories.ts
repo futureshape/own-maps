@@ -3,6 +3,7 @@ import type { Category } from "../../shared/types";
 import { getMapRole, requireUser, touchMap } from "../db";
 import { HttpError, json, noContent, parseJson } from "../http";
 import { requireEdit } from "../permissions";
+import { invalidateMapPublicCache } from "../public-map-cache";
 import type { RequestContext } from "../types";
 
 const markerStyle = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Marker colour must be a hex colour").nullable();
@@ -29,6 +30,7 @@ export async function createCategory(context: RequestContext): Promise<Response>
     .bind(id, context.params.mapId, input.name, input.markerStyle ?? "#e8663d")
     .run();
   await touchMap(context.env, context.params.mapId);
+  await invalidateMapPublicCache(context, context.params.mapId);
   const category: Category = { id, name: input.name, markerStyle: input.markerStyle ?? "#e8663d" };
   return json({ category }, { status: 201 });
 }
@@ -53,6 +55,7 @@ export async function updateCategory(context: RequestContext): Promise<Response>
     )
     .run();
   await touchMap(context.env, context.params.mapId);
+  await invalidateMapPublicCache(context, context.params.mapId);
   return json({ ok: true });
 }
 
@@ -63,5 +66,6 @@ export async function deleteCategory(context: RequestContext): Promise<Response>
     .run();
   if (!result.meta.changes) throw new HttpError(404, "Category not found");
   await touchMap(context.env, context.params.mapId);
+  await invalidateMapPublicCache(context, context.params.mapId);
   return noContent();
 }

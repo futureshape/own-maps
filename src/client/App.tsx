@@ -32,10 +32,10 @@ export function App() {
     }
   }, [loading, user, path, publicToken]);
 
-  if (loading) return <main className="loading-state"><span className="loader"/><p>Finding your maps…</p></main>;
   if (publicToken) {
     return <MapPage publicToken={decodeURIComponent(publicToken)} navigate={navigate}/>;
   }
+  if (loading) return <main className="loading-state"><span className="loader"/><p>Finding your maps…</p></main>;
   if (!user) return <LandingPage />;
   const mapMatch = path.match(/^\/maps\/([^/]+)$/);
   if (mapMatch) return <MapPage mapId={decodeURIComponent(mapMatch[1])} navigate={navigate}/>;

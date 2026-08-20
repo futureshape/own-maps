@@ -61,7 +61,7 @@ Start the Worker:
 npm run dev
 ```
 
-`npm run dev` applies any pending local D1 migrations, builds the React app, and runs Wrangler, normally at `http://localhost:8787`. Run `npm run build` again after frontend changes. The local D1 database lives under `.wrangler/`.
+`npm run dev` applies any pending local D1 migrations, builds the React app, then watches frontend files while Wrangler runs with live reload, normally at `http://localhost:8787`. Save a frontend file to rebuild and refresh the browser automatically. The local D1 database lives under `.wrangler/`.
 
 Validation commands:
 

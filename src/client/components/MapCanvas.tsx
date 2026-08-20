@@ -158,7 +158,6 @@ export function MapCanvas({
     <div className="map-canvas-wrap">
       <div ref={host} className="map-canvas" aria-label="Interactive Google Map" />
       {map && canEdit && <PlaceSearch map={map} onSelect={handleSearchSelect} />}
-      <div className="map-legend"><span className="legend-star">★</span> Saved place</div>
       {selectionError && <div className="map-toast" role="alert">{selectionError}</div>}
       {loadError && (
         <div className="map-error">

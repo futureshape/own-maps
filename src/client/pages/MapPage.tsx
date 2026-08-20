@@ -219,7 +219,6 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
             onRemove={() => remove(selected.placeId)}
           />
         )}
-        {detail.map.role === "owner" && <button className="floating-share button secondary" onClick={() => setShareOpen(true)}><ShareIcon/> Share</button>}
       </section>
       {categoriesOpen && <CategoryDialog mapId={detail.map.id} categories={detail.categories} onChange={refresh} onClose={() => setCategoriesOpen(false)}/>}
       {shareOpen && <ShareDialog

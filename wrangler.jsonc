@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "own-maps-prod",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "8832cc6a-6119-426e-a95e-4e8ed9f3c2ca",
       "migrations_dir": "migrations"
     }
   ],

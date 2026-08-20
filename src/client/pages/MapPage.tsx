@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { MapDetail, SelectedPlace } from "../../shared/types";
 import { api } from "../api";
 import { CategoryDialog } from "../components/CategoryDialog";
-import { BackIcon, ChevronDownIcon, LayersIcon, MapIcon, MoreIcon, ShareIcon, TrashIcon } from "../components/Icons";
+import { BackIcon, ChevronDownIcon, MapIcon, MoreIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, ShareIcon, TrashIcon } from "../components/Icons";
 import { MapCanvas } from "../components/MapCanvas";
 import { Modal } from "../components/Modal";
 import { PlaceDetailsPanel } from "../components/PlaceDetailsPanel";
@@ -139,6 +139,7 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
         <header className="sidebar-brand">
           <button className="icon-button" aria-label="Back to maps" onClick={() => navigate("/")}><BackIcon/></button>
           <a className="brand compact-brand" href="/" onClick={(event) => { event.preventDefault(); navigate("/"); }}><span className="brand-mark"><MapIcon/></span>Pinboard</a>
+          <button className="icon-button sidebar-close-toggle" aria-label="Hide sidebar" onClick={() => setSidebarOpen(false)}><PanelLeftCloseIcon/></button>
         </header>
         <div className="map-title-block">
           <span className="role-badge">{detail.publicView ? "Public view" : `${detail.map.role}${detail.map.publicAccess ? " · public" : ""}`}</span>
@@ -205,7 +206,7 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
         </footer>
       </aside>
       <section className="map-workspace">
-        <button className="sidebar-toggle" aria-label="Toggle map details" onClick={() => setSidebarOpen((value) => !value)}><LayersIcon/></button>
+        {!sidebarOpen && <button className="sidebar-reopen" aria-label="Show sidebar" onClick={() => setSidebarOpen(true)}><PanelLeftOpenIcon/></button>}
         <MapCanvas places={detail.places} categories={detail.categories} canEdit={canEdit} onSelect={selectPlace}/>
         {selected && (
           <PlaceDetailsPanel

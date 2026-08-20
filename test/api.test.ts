@@ -145,6 +145,12 @@ describe("map API authorization and saved marker data", () => {
       publicToken: null,
       publicView: true,
     });
+    const publicPageHead = await callAnonymous(`/public/${publicToken}`, { method: "HEAD" });
+    expect(publicPageHead.status).toBe(200);
+    expect(publicPageHead.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const previewHead = await callAnonymous(`/public/${publicToken}/preview.png`, { method: "HEAD" });
+    expect(previewHead.status).toBe(200);
+    expect(previewHead.headers.get("content-type")).toBe("image/png");
 
     const renamed = await call("/api/maps/public-map", "owner-token", {
       method: "PATCH",
@@ -183,6 +189,7 @@ describe("map API authorization and saved marker data", () => {
     });
     expect(await disabled.json()).toMatchObject({ publicToken: null });
     expect((await callAnonymous(`/api/public/maps/${publicToken}`)).status).toBe(404);
+    expect((await callAnonymous(`/public/${publicToken}`, { method: "HEAD" })).status).toBe(404);
 
     const reenabled = await call("/api/maps/public-map", "owner-token", {
       method: "PATCH",

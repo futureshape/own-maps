@@ -13,6 +13,7 @@ flowchart LR
     I -->|"JWKS token verification"| W
     W -->|"Parameterized SQL"| D[("Cloudflare D1")]
     W --> A["Static assets"]
+    W -->|"Public-link preview images"| S["Google Maps Static API"]
 ```
 
 Google owns place identity and live place presentation. D1 stores map ownership, memberships, invites, revocable public-link tokens, categories, Place IDs, display names, marker coordinates, and user notes. Saved markers and named lists render from D1; loading a map does not resolve every Place ID again.
@@ -42,7 +43,7 @@ Google owns place identity and live place presentation. D1 stores map ownership,
 
 ## Local development
 
-> **Google API prerequisite:** before starting the app, enable all three APIs in the Google Cloud project that owns your browser key: **Maps JavaScript API**, **Places API (New)**, and **Places UI Kit API**. Places UI Kit API is a separate activation; enabling Places API (New) alone is not sufficient. If the browser key uses API restrictions, all three APIs must also be included in its allow-list.
+> **Google API prerequisite:** before starting the app, enable **Maps JavaScript API**, **Places API (New)**, **Places UI Kit API**, and **Maps Static API**. Places UI Kit API and Maps Static API are separate activations. The first three belong on the browser key; Maps Static API belongs on the Worker-only preview key.
 
 Install dependencies and create local configuration:
 
@@ -52,7 +53,7 @@ cp .env.example .env
 cp .dev.vars.example .dev.vars
 ```
 
-Fill in `.env` with browser-facing Google values and `.dev.vars` with the same OAuth client ID for Worker token verification. Neither file is committed.
+Fill in `.env` with browser-facing Google values and `.dev.vars` with the OAuth client ID plus the Worker-only Static Maps key. Neither file is committed.
 
 Start the Worker:
 
@@ -80,14 +81,16 @@ The tests run in Cloudflare's Workers Vitest runtime with a real local D1 bindin
    - **Maps JavaScript API**
    - **Places API (New)**
    - **Places UI Kit API**
+   - **Maps Static API**
 
-   **Places UI Kit API is a distinct API.** The place popup will not load if only Maps JavaScript API and Places API (New) are enabled.
+   **Places UI Kit API and Maps Static API are distinct APIs.** The place popup will not load without the former, and public-link preview images will not load without the latter.
 3. Create a JavaScript map ID for Advanced Markers. Use it as `VITE_GOOGLE_MAP_ID`.
 4. Create a browser API key for `VITE_GOOGLE_MAPS_API_KEY`.
 5. Open the browser key's **API restrictions**, choose **Restrict key**, and allow **Maps JavaScript API**, **Places API (New)**, and **Places UI Kit API**. Under **Website restrictions**, allow `http://localhost:8787/*` plus the production hostname.
-6. Configure the OAuth consent screen with only `openid`, `email`, and `profile` identity scopes. No Gmail, Drive, Contacts, or other Google data scopes are needed.
-7. Create a **Web application** OAuth client. Add the production origin and `http://localhost:8787` to Authorized JavaScript origins. This app uses the Google Identity credential callback, so it does not need an OAuth redirect route.
-8. Use that client ID for both `VITE_GOOGLE_CLIENT_ID` and the Worker's `GOOGLE_CLIENT_ID` binding.
+6. Create a second API key for `GOOGLE_MAPS_STATIC_API_KEY`. Restrict it to **Maps Static API**. Do not add browser referrer restrictions: the Worker requests preview images server-side and proxies them so this key is never exposed in public-link metadata.
+7. Configure the OAuth consent screen with only `openid`, `email`, and `profile` identity scopes. No Gmail, Drive, Contacts, or other Google data scopes are needed.
+8. Create a **Web application** OAuth client. Add the production origin and `http://localhost:8787` to Authorized JavaScript origins. This app uses the Google Identity credential callback, so it does not need an OAuth redirect route.
+9. Use that client ID for both `VITE_GOOGLE_CLIENT_ID` and the Worker's `GOOGLE_CLIENT_ID` binding.
 
 The browser Maps key and OAuth client ID are public identifiers. Security comes from API/referrer restrictions, OAuth origin restrictions, and server-side token validation—not from trying to hide those values in the bundle.
 
@@ -132,10 +135,11 @@ Create the production database:
 npx wrangler d1 create own-maps-prod
 ```
 
-Replace the all-zero `database_id` in `wrangler.jsonc` with the returned UUID and commit that change. Then store the Google client ID as a Worker secret/binding:
+Replace the all-zero `database_id` in `wrangler.jsonc` with the returned UUID and commit that change. Then store the Google client ID and Static Maps preview key as Worker secrets/bindings:
 
 ```bash
 npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_MAPS_STATIC_API_KEY
 ```
 
 The client ID is not intrinsically secret, but storing it as a Worker secret keeps environment-specific server configuration out of the repository. Configure a custom hostname by uncommenting and changing the `routes` entry in `wrangler.jsonc`; no dashboard interaction is required.
@@ -164,7 +168,7 @@ Create these GitHub production secrets:
 | `VITE_GOOGLE_MAP_ID` | Google map ID used by Advanced Markers |
 | `VITE_GOOGLE_CLIENT_ID` | Google Identity web client ID embedded at build time |
 
-The persistent Worker `GOOGLE_CLIENT_ID` secret is provisioned once with Wrangler. Routine production deployment is then just a push to `main`.
+The persistent Worker `GOOGLE_CLIENT_ID` and `GOOGLE_MAPS_STATIC_API_KEY` secrets are provisioned once with Wrangler. Routine production deployment is then just a push to `main`.
 
 ## Security model
 
@@ -175,15 +179,15 @@ The persistent Worker `GOOGLE_CLIENT_ID` secret is provisioned once with Wrangle
 - Owner, editor, and viewer capabilities are centralised in `permissions.ts`; the UI's role is only presentational.
 - Public links use random UUID tokens, never grant membership, and only reach a read-only GET endpoint. Every mutation still verifies an authenticated owner or editor in the Worker.
 - Login throttling is a best-effort per-isolate guard. For globally consistent high-volume limits, add a Cloudflare Rate Limiting binding rather than application state in KV.
-- The browser never connects directly to D1, and no Google Maps or Places secret is proxied through the Worker.
+- The browser never connects directly to D1. The Static Maps key is only sent from the Worker to Google; clients and social crawlers receive the resulting image, not the key-bearing Google URL.
 
 ## API overview
 
-The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. Disabling the link deletes its token, and enabling it again creates a new URL.
+The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. The public page includes map-specific Open Graph and Twitter metadata whose same-origin image endpoint proxies a 1200×630 Google Static Maps preview, auto-fitted to all saved places with tiny pins. Disabling the link deletes its token, and enabling it again creates a new URL.
 
 ## Cost assumptions
 
-This design avoids search-on-pan and avoids Place Details lookups while restoring markers. A map load uses Dynamic Maps; autocomplete and an opened UI Kit detail card use the relevant Google Maps Platform SKUs. Selecting a new place requests `displayName`, which triggers the Places API Place Details Pro SKU, and stores that name so category lists and later map loads need no name lookup. Rows created before the display-name migration are backfilled lazily only when selected. Cloudflare static assets are served separately from `/api/*` Worker requests. Allowances and prices change, so confirm current figures on the official [Google Maps Platform pricing](https://mapsplatform.google.com/pricing/) and [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) pages before launch. Nothing in product logic hard-codes a price or allowance.
+This design avoids search-on-pan and avoids Place Details lookups while restoring markers. A map load uses Dynamic Maps; autocomplete and an opened UI Kit detail card use the relevant Google Maps Platform SKUs. Selecting a new place requests `displayName`, which triggers the Places API Place Details Pro SKU, and stores that name so category lists and later map loads need no name lookup. Public-link images use Maps Static API and are cached by Cloudflare's outbound fetch cache and by social clients. Rows created before the display-name migration are backfilled lazily only when selected. Cloudflare static assets are served separately from API and public metadata requests. Allowances and prices change, so confirm current figures on the official [Google Maps Platform pricing](https://mapsplatform.google.com/pricing/) and [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) pages before launch. Nothing in product logic hard-codes a price or allowance.
 
 ## Deliberate v1 boundaries
 

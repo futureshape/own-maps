@@ -10,6 +10,7 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(fileURLToPath(new URL("./migrations", import.meta.url))),
           GOOGLE_CLIENT_ID: "test-client.apps.googleusercontent.com",
+          GOOGLE_MAPS_STATIC_API_KEY: "test-static-maps-key",
           APP_ENV: "test",
         },
       },

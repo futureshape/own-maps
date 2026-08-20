@@ -12,6 +12,7 @@ import {
 import { authenticate } from "./auth/session";
 import { handleError, json, requireSameOrigin } from "./http";
 import { limitLogin } from "./rate-limit";
+import { getPublicMapPage, getPublicMapPreview } from "./public-map-social";
 import { Router } from "./router";
 import type { Env, Handler, RequestContext } from "./types";
 
@@ -25,6 +26,10 @@ function withLoginLimit(handler: Handler): Handler {
 }
 
 router
+  .on("GET", "/public/:publicToken", getPublicMapPage)
+  .on("HEAD", "/public/:publicToken", getPublicMapPage)
+  .on("GET", "/public/:publicToken/preview.png", getPublicMapPreview)
+  .on("HEAD", "/public/:publicToken/preview.png", getPublicMapPreview)
   .on("POST", "/api/auth/google", withLoginLimit(login))
   .on("POST", "/api/auth/logout", logout)
   .on("GET", "/api/me", me)
@@ -58,11 +63,14 @@ function withSecurityHeaders(response: Response): Response {
 export default {
   async fetch(request: Request, env: Env, executionCtx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    const publicMapRoute = /^\/public\/[^/]+(?:\/preview\.png)?$/.test(url.pathname);
+    if (!url.pathname.startsWith("/api/") && !publicMapRoute) return env.ASSETS.fetch(request);
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
 
     try {
-      const publicMapRead = request.method === "GET" && /^\/api\/public\/maps\/[^/]+$/.test(url.pathname);
+      const publicMapRead = ["GET", "HEAD"].includes(request.method) && (
+        /^\/api\/public\/maps\/[^/]+$/.test(url.pathname) || publicMapRoute
+      );
       const auth = publicMapRead ? {} : await authenticate(request, env);
       const baseContext: Omit<RequestContext, "params"> = { request, env, url, executionCtx, ...auth };
       requireSameOrigin({ ...baseContext, params: {} });

@@ -1,3 +1,4 @@
 # Worker-only local values. Copy to .dev.vars.
 GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+GOOGLE_MAPS_STATIC_API_KEY="your_static_maps_server_key"
 APP_ENV="development"

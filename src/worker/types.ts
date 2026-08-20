@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   GOOGLE_CLIENT_ID: string;
+  GOOGLE_MAPS_STATIC_API_KEY?: string;
   APP_ENV?: "development" | "production" | "test";
 }
 

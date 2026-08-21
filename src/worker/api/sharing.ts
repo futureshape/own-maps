@@ -130,6 +130,7 @@ export async function updateMember(context: RequestContext): Promise<Response> {
     .run();
   if (!result.meta.changes) throw new HttpError(404, "Member not found");
   await touchMap(context.env, context.params.mapId);
+  await context.env.MAP_COLLABORATION.getByName(context.params.mapId).disconnectUser(context.params.userId, true);
   return json({ ok: true });
 }
 
@@ -142,5 +143,6 @@ export async function deleteMember(context: RequestContext): Promise<Response> {
     .run();
   if (!result.meta.changes) throw new HttpError(404, "Member not found");
   await touchMap(context.env, context.params.mapId);
+  await context.env.MAP_COLLABORATION.getByName(context.params.mapId).disconnectUser(context.params.userId);
   return noContent();
 }

@@ -1,5 +1,6 @@
 import { login, logout, me } from "./api/auth";
 import { createCategory, deleteCategory, updateCategory } from "./api/categories";
+import { connectToMap } from "./api/collaboration";
 import { createMap, deleteMap, getMap, getPublicMap, listMaps, updateMap } from "./api/maps";
 import { createPlace, deletePlace, updatePlace } from "./api/places";
 import {
@@ -37,6 +38,7 @@ router
   .on("POST", "/api/maps", createMap)
   .on("GET", "/api/public/maps/:publicToken", getPublicMap)
   .on("GET", "/api/maps/:mapId", getMap)
+  .on("GET", "/api/maps/:mapId/collaboration", connectToMap)
   .on("PATCH", "/api/maps/:mapId", updateMap)
   .on("DELETE", "/api/maps/:mapId", deleteMap)
   .on("POST", "/api/maps/:mapId/places", createPlace)
@@ -81,3 +83,5 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+export { MapCollaboration } from "./collaboration";

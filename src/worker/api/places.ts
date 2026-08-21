@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SavedPlace } from "../../shared/types";
+import { publishMapDataChanged } from "../collaboration";
 import { getMapRole, requireUser, touchMap } from "../db";
 import { HttpError, json, noContent, parseJson } from "../http";
 import { requireEdit } from "../permissions";
@@ -70,6 +71,7 @@ export async function createPlace(context: RequestContext): Promise<Response> {
     sortOrder: null,
     createdAt: now,
   };
+  await publishMapDataChanged(context.env, context.params.mapId);
   return json({ place }, { status: 201 });
 }
 
@@ -78,28 +80,58 @@ export async function updatePlace(context: RequestContext): Promise<Response> {
   requireEdit(await getMapRole(context.env, context.params.mapId, user.id));
   const input = await parseJson(context, updatePlaceInput);
   await assertCategory(context, input.categoryId);
-  const current = await context.env.DB.prepare(
-    "SELECT display_name, category_id, note, sort_order FROM map_places WHERE map_id = ? AND place_id = ?",
+  const assignments: string[] = [];
+  const values: (string | number | null)[] = [];
+  if (input.displayName !== undefined) {
+    assignments.push("display_name = ?");
+    values.push(input.displayName);
+  }
+  if (input.categoryId !== undefined) {
+    assignments.push("category_id = ?");
+    values.push(input.categoryId);
+  }
+  if (input.note !== undefined) {
+    assignments.push("note = ?");
+    values.push(input.note);
+  }
+  if (input.sortOrder !== undefined) {
+    assignments.push("sort_order = ?");
+    values.push(input.sortOrder);
+  }
+  const place = await context.env.DB.prepare(
+    `UPDATE map_places SET ${assignments.join(", ")}
+     WHERE map_id = ? AND place_id = ?
+     RETURNING id, place_id, display_name, lat, lng, category_id, note, sort_order, created_at`,
   )
-    .bind(context.params.mapId, context.params.placeId)
-    .first<{ display_name: string | null; category_id: string | null; note: string | null; sort_order: number | null }>();
-  if (!current) throw new HttpError(404, "Saved place not found");
-  await context.env.DB.prepare(
-    `UPDATE map_places SET display_name = ?, category_id = ?, note = ?, sort_order = ?
-     WHERE map_id = ? AND place_id = ?`,
-  )
-    .bind(
-      input.displayName === undefined ? current.display_name : input.displayName,
-      input.categoryId === undefined ? current.category_id : input.categoryId,
-      input.note === undefined ? current.note : input.note,
-      input.sortOrder === undefined ? current.sort_order : input.sortOrder,
-      context.params.mapId,
-      context.params.placeId,
-    )
-    .run();
+    .bind(...values, context.params.mapId, context.params.placeId)
+    .first<{
+      id: string;
+      place_id: string;
+      display_name: string | null;
+      lat: number;
+      lng: number;
+      category_id: string | null;
+      note: string | null;
+      sort_order: number | null;
+      created_at: number;
+    }>();
+  if (!place) throw new HttpError(404, "Saved place not found");
   await touchMap(context.env, context.params.mapId);
   await invalidateMapPublicCache(context, context.params.mapId);
-  return json({ ok: true });
+  await publishMapDataChanged(context.env, context.params.mapId);
+  return json({
+    place: {
+      id: place.id,
+      placeId: place.place_id,
+      displayName: place.display_name,
+      lat: place.lat,
+      lng: place.lng,
+      categoryId: place.category_id,
+      note: place.note,
+      sortOrder: place.sort_order,
+      createdAt: place.created_at,
+    } satisfies SavedPlace,
+  });
 }
 
 export async function deletePlace(context: RequestContext): Promise<Response> {
@@ -113,5 +145,6 @@ export async function deletePlace(context: RequestContext): Promise<Response> {
   if (!result.meta.changes) throw new HttpError(404, "Saved place not found");
   await touchMap(context.env, context.params.mapId);
   await invalidateMapPublicCache(context, context.params.mapId);
+  await publishMapDataChanged(context.env, context.params.mapId);
   return noContent();
 }

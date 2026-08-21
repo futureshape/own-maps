@@ -54,7 +54,7 @@ export const api = {
     placeId: string,
     input: { displayName?: string; note?: string | null; categoryId?: string | null; sortOrder?: number | null },
   ) =>
-    request<{ ok: true }>(
+    request<{ place: SavedPlace }>(
       `/api/maps/${encodeURIComponent(mapId)}/places/${encodeURIComponent(placeId)}`,
       { method: "PATCH", body: JSON.stringify(input) },
     ),

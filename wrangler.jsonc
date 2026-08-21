@@ -18,6 +18,14 @@
       "migrations_dir": "migrations"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "MAP_COLLABORATION", "class_name": "MapCollaboration" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["MapCollaboration"] }
+  ],
   "vars": {
     "APP_ENV": "production"
   },

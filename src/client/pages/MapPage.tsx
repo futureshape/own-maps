@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { MapDetail, SelectedPlace } from "../../shared/types";
 import { api } from "../api";
+import { useAuth } from "../auth";
+import { useMapCollaboration } from "../collaboration";
 import { CategoryDialog } from "../components/CategoryDialog";
+import { CollaborationBar } from "../components/CollaborationBar";
 import { BackIcon, ChevronDownIcon, MapIcon, MoreIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, ShareIcon, TrashIcon } from "../components/Icons";
 import { MapCanvas } from "../components/MapCanvas";
 import { Modal } from "../components/Modal";
@@ -14,6 +17,7 @@ type MapPageProps = (
 ) & { navigate: (path: string) => void };
 
 export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
+  const { user } = useAuth();
   const [detail, setDetail] = useState<MapDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -23,6 +27,7 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
     () => !window.matchMedia("(max-width: 620px)").matches,
   );
   const [selected, setSelected] = useState<SelectedPlace | null>(null);
+  const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [collapsedPlaceGroups, setCollapsedPlaceGroups] = useState<Set<string>>(() => new Set());
 
   const refresh = useCallback(async () => {
@@ -38,6 +43,18 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
   useEffect(() => {
     void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : "Could not load map"));
   }, [refresh]);
+
+  const collaboration = useMapCollaboration({
+    mapId: mapId ?? null,
+    enabled: Boolean(mapId && detail && user),
+    onDataChanged: refresh,
+  });
+
+  useEffect(() => {
+    if (followingUserId && !collaboration.users.some((candidate) => candidate.userId === followingUserId)) {
+      setFollowingUserId(null);
+    }
+  }, [collaboration.users, followingUserId]);
 
   const add = useCallback(async (selected: SelectedPlace) => {
     if (!detail) throw new Error("Map is not loaded");
@@ -58,10 +75,10 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
 
   const update = useCallback(async (placeId: string, input: { note: string | null; categoryId: string | null }) => {
     if (!detail) throw new Error("Map is not loaded");
-    await api.updatePlace(detail.map.id, placeId, input);
+    const { place } = await api.updatePlace(detail.map.id, placeId, input);
     setDetail((current) => current ? {
       ...current,
-      places: current.places.map((place) => place.placeId === placeId ? { ...place, ...input } : place),
+      places: current.places.map((candidate) => candidate.placeId === placeId ? place : candidate),
     } : current);
   }, [detail]);
 
@@ -88,11 +105,15 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
         const googlePlace = new Place({ id: place.placeId });
         await googlePlace.fetchFields({ fields: ["displayName"] });
         if (!googlePlace.displayName) return;
-        await api.updatePlace(detail.map.id, place.placeId, { displayName: googlePlace.displayName });
+        const { place: updatedPlace } = await api.updatePlace(
+          detail.map.id,
+          place.placeId,
+          { displayName: googlePlace.displayName },
+        );
         setDetail((current) => current ? {
           ...current,
           places: current.places.map((item) => item.placeId === place.placeId
-            ? { ...item, displayName: googlePlace.displayName ?? item.displayName }
+            ? updatedPlace
             : item),
         } : current);
         setSelected((current) => current?.placeId === place.placeId
@@ -209,7 +230,28 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
       </aside>
       <section className="map-workspace">
         {!sidebarOpen && <button className="sidebar-reopen" aria-label="Show sidebar" onClick={() => setSidebarOpen(true)}><PanelLeftOpenIcon/></button>}
-        <MapCanvas places={detail.places} categories={detail.categories} canEdit={canEdit} onSelect={selectPlace} selected={selected}/>
+        <MapCanvas
+          places={detail.places}
+          categories={detail.categories}
+          canEdit={canEdit}
+          onSelect={selectPlace}
+          selected={selected}
+          collaborators={collaboration.users}
+          remoteCursors={Object.values(collaboration.cursors)}
+          followViewport={followingUserId ? collaboration.viewports[followingUserId] ?? null : null}
+          onCursorMove={collaboration.sendCursor}
+          onViewportChange={collaboration.sendViewport}
+          onStopFollowing={() => setFollowingUserId(null)}
+        />
+        {!detail.publicView && (
+          <CollaborationBar
+            users={collaboration.users}
+            selfUserId={collaboration.selfUserId}
+            followingUserId={followingUserId}
+            status={collaboration.status}
+            onFollow={setFollowingUserId}
+          />
+        )}
         {selected && (
           <PlaceDetailsPanel
             selected={selected}

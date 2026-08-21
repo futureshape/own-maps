@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Category, SavedPlace, SelectedPlace } from "../../shared/types";
+import type {
+  Category,
+  CollaborationCursor,
+  CollaborationUser,
+  CollaborationViewport,
+  SavedPlace,
+  SelectedPlace,
+} from "../../shared/types";
+import { collaboratorColour } from "../collaboration";
 import { loadGoogleMaps } from "../google";
 import { PlaceSearch } from "./PlaceSearch";
 
@@ -30,25 +38,52 @@ function selectedMarkerContent(): HTMLElement {
   return marker;
 }
 
+function collaboratorCursorContent(user: CollaborationUser): HTMLElement {
+  const cursor = document.createElement("div");
+  cursor.className = "collaborator-cursor";
+  cursor.style.setProperty("--collaborator-colour", collaboratorColour(user.userId));
+  cursor.innerHTML = `<svg viewBox="0 0 28 34" aria-hidden="true"><path d="M2 2v25l7.2-6.3 5.1 10.7 4.2-2-5.1-10.6 9.6-.8L2 2Z" /></svg>`;
+  const label = document.createElement("span");
+  label.textContent = user.displayName ?? "Collaborator";
+  cursor.appendChild(label);
+  return cursor;
+}
+
 export function MapCanvas({
   places,
   categories,
   canEdit,
   onSelect,
   selected,
+  collaborators,
+  remoteCursors,
+  followViewport,
+  onCursorMove,
+  onViewportChange,
+  onStopFollowing,
 }: {
   places: SavedPlace[];
   categories: Category[];
   canEdit: boolean;
   onSelect: (place: SelectedPlace) => void;
   selected: SelectedPlace | null;
+  collaborators: CollaborationUser[];
+  remoteCursors: CollaborationCursor[];
+  followViewport: CollaborationViewport | null;
+  onCursorMove: (position: { lat: number; lng: number } | null) => void;
+  onViewportChange: (center: { lat: number; lng: number }, zoom: number) => void;
+  onStopFollowing: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const selectedMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const collaboratorMarkersRef = useRef(new Map<string, google.maps.marker.AdvancedMarkerElement>());
   const fitDone = useRef(false);
   const selectionHandler = useRef<(place: SelectedPlace) => Promise<void>>(async () => {});
+  const cursorHandler = useRef(onCursorMove);
+  const viewportHandler = useRef(onViewportChange);
+  const stopFollowingHandler = useRef(onStopFollowing);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
@@ -86,8 +121,20 @@ export function MapCanvas({
   }, [resolveSelection]);
 
   useEffect(() => {
+    cursorHandler.current = onCursorMove;
+    viewportHandler.current = onViewportChange;
+    stopFollowingHandler.current = onStopFollowing;
+  }, [onCursorMove, onStopFollowing, onViewportChange]);
+
+  useEffect(() => {
     let disposed = false;
+    const collaboratorMarkers = collaboratorMarkersRef.current;
     let mapClick: google.maps.MapsEventListener | null = null;
+    let mapMouseMove: google.maps.MapsEventListener | null = null;
+    let mapIdle: google.maps.MapsEventListener | null = null;
+    let mapDragStart: google.maps.MapsEventListener | null = null;
+    let cursorTimer: number | null = null;
+    let pendingCursor: google.maps.LatLngLiteral | null = null;
     void loadGoogleMaps()
       .then(async () => {
         if (disposed || !host.current) return;
@@ -113,6 +160,21 @@ export function MapCanvas({
             });
           });
         }
+        mapMouseMove = instance.addListener("mousemove", (event: google.maps.MapMouseEvent) => {
+          if (!event.latLng) return;
+          pendingCursor = event.latLng.toJSON();
+          if (cursorTimer !== null) return;
+          cursorTimer = window.setTimeout(() => {
+            cursorTimer = null;
+            if (pendingCursor) cursorHandler.current(pendingCursor);
+          }, 50);
+        });
+        mapIdle = instance.addListener("idle", () => {
+          const center = instance.getCenter();
+          const zoom = instance.getZoom();
+          if (center && zoom !== undefined) viewportHandler.current(center.toJSON(), zoom);
+        });
+        mapDragStart = instance.addListener("dragstart", () => stopFollowingHandler.current());
         mapRef.current = instance;
         setMap(instance);
       })
@@ -120,12 +182,63 @@ export function MapCanvas({
     return () => {
       disposed = true;
       mapClick?.remove();
+      mapMouseMove?.remove();
+      mapIdle?.remove();
+      mapDragStart?.remove();
+      if (cursorTimer !== null) window.clearTimeout(cursorTimer);
       markersRef.current.forEach((marker) => { marker.map = null; });
+      collaboratorMarkers.forEach((marker) => { marker.map = null; });
+      collaboratorMarkers.clear();
       if (selectedMarkerRef.current) selectedMarkerRef.current.map = null;
       selectedMarkerRef.current = null;
       mapRef.current = null;
     };
   }, [canEdit]);
+
+  useEffect(() => {
+    if (!map) return;
+    let disposed = false;
+    void google.maps.importLibrary("marker").then((library) => {
+      if (disposed) return;
+      const { AdvancedMarkerElement } = library as google.maps.MarkerLibrary;
+      const activeUserIds = new Set(remoteCursors.map((cursor) => cursor.userId));
+      for (const [userId, marker] of collaboratorMarkersRef.current) {
+        if (activeUserIds.has(userId)) continue;
+        marker.map = null;
+        collaboratorMarkersRef.current.delete(userId);
+      }
+      for (const cursor of remoteCursors) {
+        const existing = collaboratorMarkersRef.current.get(cursor.userId);
+        if (existing) {
+          existing.position = { lat: cursor.lat, lng: cursor.lng };
+          continue;
+        }
+        const user = collaborators.find((candidate) => candidate.userId === cursor.userId);
+        if (!user) continue;
+        collaboratorMarkersRef.current.set(cursor.userId, new AdvancedMarkerElement({
+          map,
+          position: { lat: cursor.lat, lng: cursor.lng },
+          content: collaboratorCursorContent(user),
+          title: `${user.displayName ?? "Collaborator"}'s cursor`,
+          zIndex: 100,
+          collisionBehavior: google.maps.CollisionBehavior.REQUIRED,
+        }));
+      }
+    });
+    return () => { disposed = true; };
+  }, [collaborators, map, remoteCursors]);
+
+  useEffect(() => {
+    if (!map || !followViewport) return;
+    const currentCenter = map.getCenter();
+    const currentZoom = map.getZoom();
+    const centerChanged = !currentCenter ||
+      Math.abs(currentCenter.lat() - followViewport.center.lat) > 0.000001 ||
+      Math.abs(currentCenter.lng() - followViewport.center.lng) > 0.000001;
+    if (centerChanged || currentZoom !== followViewport.zoom) {
+      map.moveCamera({ center: followViewport.center, zoom: followViewport.zoom });
+    }
+  }, [followViewport, map]);
 
   useEffect(() => {
     if (!map) return;
@@ -231,7 +344,7 @@ export function MapCanvas({
   }, [resolveSelection]);
 
   return (
-    <div className="map-canvas-wrap">
+    <div className="map-canvas-wrap" onMouseLeave={() => cursorHandler.current(null)}>
       <div ref={host} className="map-canvas" aria-label="Interactive Google Map" />
       {map && canEdit && <PlaceSearch map={map} onSelect={handleSearchSelect} />}
       {selectionError && <div className="map-toast" role="alert">{selectionError}</div>}

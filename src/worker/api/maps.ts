@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Category, MapDetail, MapRole, MapSummary, SavedPlace } from "../../shared/types";
+import { publishMapDataChanged } from "../collaboration";
 import { getMapRole, requireUser } from "../db";
 import { HttpError, json, noContent, parseJson } from "../http";
 import { requireOwner } from "../permissions";
@@ -216,6 +217,7 @@ export async function updateMap(context: RequestContext): Promise<Response> {
     )
     .run();
   await invalidatePublicMapCache(context, current.public_token);
+  await publishMapDataChanged(context.env, context.params.mapId);
   return json({ ok: true, publicToken });
 }
 

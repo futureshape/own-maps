@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Category } from "../../shared/types";
+import { publishMapDataChanged } from "../collaboration";
 import { getMapRole, requireUser, touchMap } from "../db";
 import { HttpError, json, noContent, parseJson } from "../http";
 import { requireEdit } from "../permissions";
@@ -32,6 +33,7 @@ export async function createCategory(context: RequestContext): Promise<Response>
   await touchMap(context.env, context.params.mapId);
   await invalidateMapPublicCache(context, context.params.mapId);
   const category: Category = { id, name: input.name, markerStyle: input.markerStyle ?? "#e8663d" };
+  await publishMapDataChanged(context.env, context.params.mapId);
   return json({ category }, { status: 201 });
 }
 
@@ -56,6 +58,7 @@ export async function updateCategory(context: RequestContext): Promise<Response>
     .run();
   await touchMap(context.env, context.params.mapId);
   await invalidateMapPublicCache(context, context.params.mapId);
+  await publishMapDataChanged(context.env, context.params.mapId);
   return json({ ok: true });
 }
 
@@ -67,5 +70,6 @@ export async function deleteCategory(context: RequestContext): Promise<Response>
   if (!result.meta.changes) throw new HttpError(404, "Category not found");
   await touchMap(context.env, context.params.mapId);
   await invalidateMapPublicCache(context, context.params.mapId);
+  await publishMapDataChanged(context.env, context.params.mapId);
   return noContent();
 }

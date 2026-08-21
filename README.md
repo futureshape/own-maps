@@ -12,6 +12,8 @@ flowchart LR
     R -->|"HTTPS + HttpOnly session"| W["Cloudflare Worker"]
     I -->|"JWKS token verification"| W
     W -->|"Parameterized SQL"| D[("Cloudflare D1")]
+    R <-->|"Presence, cursors, viewports"| O["Durable Object per map"]
+    W -->|"Authenticated WebSocket upgrade"| O
     W --> A["Static assets"]
     W -->|"Public-link preview images"| S["Google Maps Static API"]
 ```
@@ -31,6 +33,8 @@ Google owns place identity and live place presentation. D1 stores map ownership,
 - notes and colour-coded categories
 - owner/editor/viewer permissions checked by the Worker
 - sharing by verified Google-account email, including pending invites
+- live collaborator presence, cursors, and viewport following for shared-map members
+- synchronized place and category lists after concurrent edits
 - optional revocable public links with anonymous, read-only access
 - D1 migrations and GitHub Actions deployment
 
@@ -210,7 +214,7 @@ The persistent Worker `GOOGLE_CLIENT_ID` and `GOOGLE_MAPS_STATIC_API_KEY` secret
 
 ## API overview
 
-The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. The public page includes map-specific Open Graph and Twitter metadata whose same-origin image endpoint proxies a 1200×630 Google Static Maps preview, auto-fitted to all saved places with tiny pins. Disabling the link deletes its token, and enabling it again creates a new URL.
+The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Authenticated members connect to `/api/maps/:mapId/collaboration`; the Worker rechecks membership before forwarding the WebSocket to the map's Durable Object. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. Anonymous public-link viewers do not join private collaboration presence. The public page includes map-specific Open Graph and Twitter metadata whose same-origin image endpoint proxies a 1200×630 Google Static Maps preview, auto-fitted to all saved places with tiny pins. Disabling the link deletes its token, and enabling it again creates a new URL.
 
 ## Cost assumptions
 
@@ -218,4 +222,4 @@ This design avoids search-on-pan and avoids Place Details lookups while restorin
 
 ## Deliberate v1 boundaries
 
-There is no realtime presence, offline mode, public map directory or discovery, file upload, contacts integration, notification email, Durable Object, KV, R2, queue, or second backend. Public maps are unlisted and require their exact link. Pending invites become memberships when the invited verified email next signs in.
+There is no offline mode, public map directory or discovery, file upload, contacts integration, notification email, KV, R2, queue, or second backend. Public maps are unlisted and require their exact link. Pending invites become memberships when the invited verified email next signs in.

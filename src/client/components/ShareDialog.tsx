@@ -26,6 +26,11 @@ export function ShareDialog({
   const publicUrl = publicToken
     ? `${window.location.origin}/public/${encodeURIComponent(publicToken)}`
     : null;
+  const privateExportBase = `/api/maps/${encodeURIComponent(mapId)}/export`;
+  const publicFeeds = publicUrl ? [
+    { label: "GeoJSON", url: `${publicUrl}/map.geojson` },
+    { label: "KML", url: `${publicUrl}/map.kml` },
+  ] : [];
 
   const refresh = useCallback(async () => {
     const response = await api.sharing(mapId);
@@ -54,11 +59,10 @@ export function ShareDialog({
     }
   };
 
-  const copyPublicLink = async () => {
-    if (!publicUrl) return;
+  const copyLink = async (url: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(publicUrl);
-      setCopyMessage("Link copied");
+      await navigator.clipboard.writeText(url);
+      setCopyMessage(`${label} copied`);
     } catch {
       setCopyMessage("Could not copy automatically. Select and copy the link.");
     }
@@ -140,9 +144,43 @@ export function ShareDialog({
                 value={publicUrl}
                 onFocus={(event) => event.currentTarget.select()}
               />
-              <button type="button" className="button secondary" onClick={() => void copyPublicLink()}>
+              <button type="button" className="button secondary" onClick={() => void copyLink(publicUrl, "Public link")}>
                 Copy link
               </button>
+            </div>
+          )}
+        </section>
+        <section className="export-sharing" aria-labelledby="export-sharing-title">
+          <div>
+            <h3 id="export-sharing-title">Export places</h3>
+            <p>Use KML with Google My Maps, or GeoJSON with most mapping tools.</p>
+          </div>
+          <div className="export-actions">
+            <a className="button secondary" href={`${privateExportBase}.geojson`} download>Download GeoJSON</a>
+            <a className="button secondary" href={`${privateExportBase}.kml`} download>Download KML</a>
+          </div>
+          {publicFeeds.length > 0 && (
+            <div className="public-feeds">
+              <h4>Public data feeds</h4>
+              <p>These URLs use the same public key and stay in sync with the shared map.</p>
+              <div className="feed-list">
+                {publicFeeds.map((feed) => (
+                  <div className="feed-row" key={feed.label}>
+                    <label>
+                      <span>{feed.label}</span>
+                      <input
+                        aria-label={`Public ${feed.label} feed`}
+                        readOnly
+                        value={feed.url}
+                        onFocus={(event) => event.currentTarget.select()}
+                      />
+                    </label>
+                    <button type="button" className="button secondary" onClick={() => void copyLink(feed.url, `${feed.label} feed URL`)}>
+                      Copy
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {copyMessage && <p className="copy-message" role="status">{copyMessage}</p>}

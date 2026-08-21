@@ -35,7 +35,7 @@ Google owns place identity and live place presentation. D1 stores map ownership,
 - sharing by verified Google-account email, including pending invites
 - live collaborator presence, cursors, and viewport following for shared-map members
 - synchronized place and category lists after concurrent edits
-- optional revocable public links with anonymous, read-only access
+- optional revocable public links with anonymous, read-only collaboration access
 - D1 migrations and GitHub Actions deployment
 
 ## Requirements
@@ -214,7 +214,7 @@ The persistent Worker `GOOGLE_CLIENT_ID` and `GOOGLE_MAPS_STATIC_API_KEY` secret
 
 ## API overview
 
-The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Authenticated members connect to `/api/maps/:mapId/collaboration`; the Worker rechecks membership before forwarding the WebSocket to the map's Durable Object. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. Anonymous public-link viewers do not join private collaboration presence. The public page includes map-specific Open Graph and Twitter metadata whose same-origin image endpoint proxies a 1200×630 Google Static Maps preview, auto-fitted to all saved places with tiny pins. Disabling the link deletes its token, and enabling it again creates a new URL.
+The Worker exposes `/api/auth/google`, `/api/auth/logout`, `/api/me`, map CRUD, nested place/category CRUD, and owner-only invite/member management. `GET /api/maps/:mapId` returns map metadata, the caller's role, categories, and all saved marker coordinates and display names in one response. Authenticated members connect to `/api/maps/:mapId/collaboration`; the Worker rechecks membership before forwarding the WebSocket to the map's Durable Object. Owners can enable a public link through the map's Share dialog; `GET /api/public/maps/:publicToken` serves the same map data with viewer access and no authentication. Anonymous public-link viewers join the same collaboration room under generated guest identities, so they can see presence, share cursors, follow viewports, and receive live data refreshes, but all mutation endpoints still require an authenticated owner or editor. Revoking a public link disconnects its active guest sockets. The public page includes map-specific Open Graph and Twitter metadata whose same-origin image endpoint proxies a 1200×630 Google Static Maps preview, auto-fitted to all saved places with tiny pins. Disabling the link deletes its token, and enabling it again creates a new URL.
 
 ## Cost assumptions
 

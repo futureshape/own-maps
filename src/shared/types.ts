@@ -70,6 +70,7 @@ export interface CollaborationUser {
   displayName: string | null;
   avatarUrl: string | null;
   role: MapRole;
+  isAnonymous: boolean;
 }
 
 export interface CollaborationCursor {

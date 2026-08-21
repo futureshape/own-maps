@@ -46,7 +46,8 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
 
   const collaboration = useMapCollaboration({
     mapId: mapId ?? null,
-    enabled: Boolean(mapId && detail && user),
+    publicToken: publicToken ?? null,
+    enabled: Boolean(detail && (publicToken || (mapId && user))),
     onDataChanged: refresh,
   });
 
@@ -243,15 +244,13 @@ export function MapPage({ mapId, publicToken, navigate }: MapPageProps) {
           onViewportChange={collaboration.sendViewport}
           onStopFollowing={() => setFollowingUserId(null)}
         />
-        {!detail.publicView && (
-          <CollaborationBar
-            users={collaboration.users}
-            selfUserId={collaboration.selfUserId}
-            followingUserId={followingUserId}
-            status={collaboration.status}
-            onFollow={setFollowingUserId}
-          />
-        )}
+        <CollaborationBar
+          users={collaboration.users}
+          selfUserId={collaboration.selfUserId}
+          followingUserId={followingUserId}
+          status={collaboration.status}
+          onFollow={setFollowingUserId}
+        />
         {selected && (
           <PlaceDetailsPanel
             selected={selected}

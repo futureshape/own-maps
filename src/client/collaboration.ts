@@ -22,10 +22,12 @@ function isServerMessage(value: unknown): value is CollaborationServerMessage {
 
 export function useMapCollaboration({
   mapId,
+  publicToken,
   enabled,
   onDataChanged,
 }: {
   mapId: string | null;
+  publicToken: string | null;
   enabled: boolean;
   onDataChanged: () => Promise<void>;
 }) {
@@ -39,10 +41,11 @@ export function useMapCollaboration({
   const [viewports, setViewports] = useState<Record<string, CollaborationViewport>>({});
 
   useEffect(() => {
-    if (!enabled || !mapId) return;
+    if (!enabled || (!mapId && !publicToken)) return;
     let disposed = false;
     let retryTimer: number | null = null;
     let retryAttempt = 0;
+    const guestId = publicToken ? crypto.randomUUID() : null;
 
     const scheduleRefresh = () => {
       if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
@@ -58,8 +61,11 @@ export function useMapCollaboration({
       if (disposed) return;
       setStatus("connecting");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const path = publicToken
+        ? `/api/public/maps/${encodeURIComponent(publicToken)}/collaboration?guestId=${encodeURIComponent(guestId!)}`
+        : `/api/maps/${encodeURIComponent(mapId!)}/collaboration`;
       const socket = new WebSocket(
-        `${protocol}//${window.location.host}/api/maps/${encodeURIComponent(mapId)}/collaboration`,
+        `${protocol}//${window.location.host}${path}`,
       );
       socketRef.current = socket;
 
@@ -136,7 +142,7 @@ export function useMapCollaboration({
       setCursors({});
       setViewports({});
     };
-  }, [enabled, mapId, onDataChanged]);
+  }, [enabled, mapId, onDataChanged, publicToken]);
 
   const send = useCallback((message: object) => {
     const socket = socketRef.current;

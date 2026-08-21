@@ -46,6 +46,18 @@ async function connect(mapId: string, token: string): Promise<WebSocket> {
   return socket;
 }
 
+async function connectPublic(publicToken: string, guestId: string): Promise<WebSocket> {
+  const response = await worker.fetch(new Request(
+    `${origin}/api/public/maps/${publicToken}/collaboration?guestId=${guestId}`,
+    { headers: { origin, upgrade: "websocket" } },
+  ), env);
+  expect(response.status).toBe(101);
+  expect(response.webSocket).not.toBeNull();
+  const socket = response.webSocket!;
+  socket.accept();
+  return socket;
+}
+
 function nextMessage(socket: WebSocket): Promise<CollaborationServerMessage> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("Timed out waiting for collaboration message")), 1_000);
@@ -68,6 +80,16 @@ function nextMessages(socket: WebSocket, count: number): Promise<CollaborationSe
       resolve(messages);
     };
     socket.addEventListener("message", onMessage);
+  });
+}
+
+function nextClose(socket: WebSocket): Promise<CloseEvent> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Timed out waiting for collaboration socket close")), 1_000);
+    socket.addEventListener("close", (event) => {
+      clearTimeout(timeout);
+      resolve(event);
+    }, { once: true });
   });
 }
 
@@ -199,5 +221,110 @@ describe("map collaboration Durable Object", () => {
     }), env);
     expect(response.status).toBe(404);
     expect(response.webSocket).toBeNull();
+  });
+
+  it("includes public-link guests as read-only collaborators and disconnects them when revoked", async () => {
+    await seedUser("public-owner", "public-owner@example.com", "Polly Owner", "public-owner-token");
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO maps (id, owner_user_id, title, public_token, created_at, updated_at)
+       VALUES ('public-live-map', 'public-owner', 'Public live', 'public-live-token', ?, ?)`,
+    ).bind(now, now).run();
+
+    const owner = await connect("public-live-map", "public-owner-token");
+    await nextMessage(owner);
+    await nextMessage(owner);
+
+    const ownerSeesGuest = nextMessage(owner);
+    const guestId = "123e4567-e89b-42d3-a456-426614174000";
+    const guest = await connectPublic("public-live-token", guestId);
+    expect(await nextMessage(guest)).toMatchObject({
+      type: "ready",
+      selfUserId: `guest:${guestId}`,
+      users: expect.arrayContaining([
+        expect.objectContaining({ userId: "public-owner", isAnonymous: false }),
+        expect.objectContaining({
+          userId: `guest:${guestId}`,
+          displayName: "Guest 123E",
+          role: "viewer",
+          isAnonymous: true,
+        }),
+      ]),
+    });
+    await nextMessage(guest);
+    expect(await ownerSeesGuest).toMatchObject({
+      type: "presence",
+      users: expect.arrayContaining([expect.objectContaining({ userId: `guest:${guestId}` })]),
+    });
+
+    const guestSeesCursor = nextMessage(guest);
+    owner.send(JSON.stringify({ type: "cursor", lat: 40.7128, lng: -74.006 }));
+    expect(await guestSeesCursor).toEqual({
+      type: "cursor",
+      cursor: { userId: "public-owner", lat: 40.7128, lng: -74.006 },
+    });
+
+    const ownerCanFollowGuest = nextMessage(owner);
+    guest.send(JSON.stringify({
+      type: "viewport",
+      center: { lat: 35.6762, lng: 139.6503 },
+      zoom: 11,
+    }));
+    expect(await ownerCanFollowGuest).toEqual({
+      type: "viewport",
+      viewport: {
+        userId: `guest:${guestId}`,
+        center: { lat: 35.6762, lng: 139.6503 },
+        zoom: 11,
+      },
+    });
+
+    const guestGetsUpdate = nextMessage(guest);
+    const ownerGetsUpdate = nextMessage(owner);
+    const created = await worker.fetch(new Request(`${origin}/api/maps/public-live-map/places`, {
+      method: "POST",
+      headers: {
+        cookie: "own_maps_session=public-owner-token",
+        origin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        placeId: "ChIJ-public-live",
+        displayName: "Live public place",
+        lat: 51.5,
+        lng: -0.12,
+      }),
+    }), env);
+    expect(created.status).toBe(201);
+    expect(await guestGetsUpdate).toMatchObject({ type: "data_changed", revision: 1 });
+    await ownerGetsUpdate;
+
+    const anonymousWrite = await worker.fetch(new Request(`${origin}/api/maps/public-live-map/places`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({ placeId: "ChIJ-no", displayName: "No", lat: 1, lng: 1 }),
+    }), env);
+    expect(anonymousWrite.status).toBe(401);
+
+    const guestClosed = nextClose(guest);
+    const revoked = await worker.fetch(new Request(`${origin}/api/maps/public-live-map`, {
+      method: "PATCH",
+      headers: {
+        cookie: "own_maps_session=public-owner-token",
+        origin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ publicAccess: false }),
+    }), env);
+    expect(revoked.status).toBe(200);
+    expect((await guestClosed).code).toBe(1008);
+
+    const reconnect = await worker.fetch(new Request(
+      `${origin}/api/public/maps/public-live-token/collaboration?guestId=${crypto.randomUUID()}`,
+      { headers: { origin, upgrade: "websocket" } },
+    ), env);
+    expect(reconnect.status).toBe(404);
+    expect(reconnect.webSocket).toBeNull();
+    owner.close(1000, "done");
   });
 });

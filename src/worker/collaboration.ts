@@ -37,7 +37,14 @@ function attachmentFrom(ws: WebSocket): ConnectionAttachment | null {
     typeof candidate.userId !== "string" ||
     !["owner", "editor", "viewer"].includes(candidate.role ?? "")
   ) return null;
-  return candidate as ConnectionAttachment;
+  return {
+    sessionId: candidate.sessionId,
+    userId: candidate.userId,
+    displayName: typeof candidate.displayName === "string" ? candidate.displayName : null,
+    avatarUrl: typeof candidate.avatarUrl === "string" ? candidate.avatarUrl : null,
+    role: candidate.role as MapRole,
+    isAnonymous: candidate.isAnonymous === true,
+  };
 }
 
 function decodedHeader(request: Request, name: string): string | null {
@@ -84,9 +91,13 @@ export class MapCollaboration extends DurableObject<Env> {
       displayName: decodedHeader(request, "x-pinboard-display-name"),
       avatarUrl: decodedHeader(request, "x-pinboard-avatar-url"),
       role,
+      isAnonymous: request.headers.get("x-pinboard-anonymous") === "true",
     };
 
-    this.ctx.acceptWebSocket(server, [`user:${userId}`]);
+    this.ctx.acceptWebSocket(server, [
+      `user:${userId}`,
+      ...(attachment.isAnonymous ? ["anonymous"] : []),
+    ]);
     server.serializeAttachment(attachment);
     this.send(server, {
       type: "ready",
@@ -114,6 +125,13 @@ export class MapCollaboration extends DurableObject<Env> {
   async disconnectUser(userId: string, reconnect = false): Promise<void> {
     for (const ws of this.ctx.getWebSockets(`user:${userId}`)) {
       ws.close(reconnect ? 1012 : 1008, reconnect ? "Map access changed" : "Map access was removed");
+    }
+    this.broadcastPresence();
+  }
+
+  async disconnectAnonymous(): Promise<void> {
+    for (const ws of this.ctx.getWebSockets("anonymous")) {
+      ws.close(1008, "Public link access ended");
     }
     this.broadcastPresence();
   }
@@ -183,6 +201,7 @@ export class MapCollaboration extends DurableObject<Env> {
         displayName: attachment.displayName,
         avatarUrl: attachment.avatarUrl,
         role: attachment.role,
+        isAnonymous: attachment.isAnonymous,
       });
     }
     return [...users.values()];

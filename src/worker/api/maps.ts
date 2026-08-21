@@ -205,6 +205,9 @@ export async function updateMap(context: RequestContext): Promise<Response> {
     : input.publicAccess
       ? current.public_token ?? crypto.randomUUID()
       : null;
+  if (input.publicAccess === false && current.public_token) {
+    await context.env.MAP_COLLABORATION.getByName(context.params.mapId).disconnectAnonymous();
+  }
   await context.env.DB.prepare(
     "UPDATE maps SET title = ?, description = ?, public_token = ?, updated_at = ? WHERE id = ?",
   )
@@ -228,6 +231,9 @@ export async function deleteMap(context: RequestContext): Promise<Response> {
   const current = await context.env.DB.prepare("SELECT public_token FROM maps WHERE id = ?")
     .bind(context.params.mapId)
     .first<{ public_token: string | null }>();
+  if (current?.public_token) {
+    await context.env.MAP_COLLABORATION.getByName(context.params.mapId).disconnectAnonymous();
+  }
   await context.env.DB.prepare("DELETE FROM maps WHERE id = ?").bind(context.params.mapId).run();
   await invalidatePublicMapCache(context, current?.public_token ?? null);
   return noContent();

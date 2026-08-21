@@ -145,6 +145,48 @@ describe("map API authorization and saved marker data", () => {
       publicToken: null,
       publicView: true,
     });
+
+    const privateExportDenied = await callAnonymous("/api/maps/public-map/export.geojson");
+    expect(privateExportDenied.status).toBe(401);
+    const privateExport = await call("/api/maps/public-map/export.geojson", "owner-token");
+    expect(privateExport.status).toBe(200);
+    expect(privateExport.headers.get("content-disposition")).toBe(
+      'attachment; filename="public-london.geojson"',
+    );
+
+    const publicGeoJson = await callAnonymous(`/public/${publicToken}/map.geojson`);
+    expect(publicGeoJson.status).toBe(200);
+    expect(publicGeoJson.headers.get("content-type")).toBe("application/geo+json; charset=utf-8");
+    expect(publicGeoJson.headers.get("access-control-allow-origin")).toBe("*");
+    expect(publicGeoJson.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=30");
+    expect(await publicGeoJson.json()).toMatchObject({
+      type: "FeatureCollection",
+      name: "Public London",
+      features: [{
+        geometry: { type: "Point", coordinates: [-0.12, 51.5] },
+        properties: {
+          name: "Public Place",
+          description: "Worth a visit",
+          google_place_id: "ChIJ-public",
+        },
+      }],
+    });
+    const exportEtag = publicGeoJson.headers.get("etag");
+    const notModified = await callAnonymous(`/public/${publicToken}/map.geojson`, {
+      headers: { "if-none-match": exportEtag ?? "" },
+    });
+    expect(notModified.status).toBe(304);
+
+    const publicKml = await callAnonymous(`/public/${publicToken}/map.kml`);
+    expect(publicKml.status).toBe(200);
+    expect(publicKml.headers.get("content-type")).toBe(
+      "application/vnd.google-earth.kml+xml; charset=utf-8",
+    );
+    expect(await publicKml.text()).toContain("<coordinates>-0.12,51.5,0</coordinates>");
+    const publicKmlHead = await callAnonymous(`/public/${publicToken}/map.kml`, { method: "HEAD" });
+    expect(publicKmlHead.status).toBe(200);
+    expect(await publicKmlHead.text()).toBe("");
+
     const publicPageHead = await callAnonymous(`/public/${publicToken}`, { method: "HEAD" });
     expect(publicPageHead.status).toBe(200);
     expect(publicPageHead.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -190,6 +232,8 @@ describe("map API authorization and saved marker data", () => {
     expect(await disabled.json()).toMatchObject({ publicToken: null });
     expect((await callAnonymous(`/api/public/maps/${publicToken}`)).status).toBe(404);
     expect((await callAnonymous(`/public/${publicToken}`, { method: "HEAD" })).status).toBe(404);
+    expect((await callAnonymous(`/public/${publicToken}/map.geojson`)).status).toBe(404);
+    expect((await callAnonymous(`/public/${publicToken}/map.kml`)).status).toBe(404);
 
     const reenabled = await call("/api/maps/public-map", "owner-token", {
       method: "PATCH",

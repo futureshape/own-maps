@@ -17,6 +17,19 @@ function markerContent(color: string): HTMLElement {
   return marker;
 }
 
+function selectedMarkerContent(): HTMLElement {
+  const marker = document.createElement("div");
+  marker.className = "selected-marker";
+  marker.innerHTML = `
+    <svg viewBox="0 0 48 58" aria-hidden="true">
+      <path class="selected-marker-pin" d="M24 2C11.85 2 2 11.85 2 24c0 16.5 22 32 22 32s22-15.5 22-32C46 11.85 36.15 2 24 2Z" />
+      <circle class="selected-marker-dot" cx="24" cy="24" r="6" />
+    </svg>
+    <span class="sr-only">Selected search result</span>
+  `;
+  return marker;
+}
+
 export function MapCanvas({
   places,
   categories,
@@ -33,6 +46,7 @@ export function MapCanvas({
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const selectedMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const fitDone = useRef(false);
   const selectionHandler = useRef<(place: SelectedPlace) => Promise<void>>(async () => {});
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -107,6 +121,8 @@ export function MapCanvas({
       disposed = true;
       mapClick?.remove();
       markersRef.current.forEach((marker) => { marker.map = null; });
+      if (selectedMarkerRef.current) selectedMarkerRef.current.map = null;
+      selectedMarkerRef.current = null;
       mapRef.current = null;
     };
   }, [canEdit]);
@@ -153,6 +169,33 @@ export function MapCanvas({
       markersRef.current = [];
     };
   }, [map, places, categories, onSelect]);
+
+  useEffect(() => {
+    const isSaved = places.some((place) => place.placeId === selectedPlaceId);
+    if (selectedMarkerRef.current) selectedMarkerRef.current.map = null;
+    selectedMarkerRef.current = null;
+    if (!map || selected?.source !== "search" || !selectedLocation || isSaved) return;
+
+    let disposed = false;
+    void google.maps.importLibrary("marker").then((library) => {
+      if (disposed) return;
+      const { AdvancedMarkerElement } = library as google.maps.MarkerLibrary;
+      selectedMarkerRef.current = new AdvancedMarkerElement({
+        map,
+        position: selectedLocation,
+        content: selectedMarkerContent(),
+        title: selected.displayName ?? "Selected search result",
+        zIndex: 11,
+        collisionBehavior: google.maps.CollisionBehavior.REQUIRED_AND_HIDES_OPTIONAL,
+      });
+    });
+
+    return () => {
+      disposed = true;
+      if (selectedMarkerRef.current) selectedMarkerRef.current.map = null;
+      selectedMarkerRef.current = null;
+    };
+  }, [map, places, selected, selectedLocation, selectedPlaceId]);
 
   useEffect(() => {
     if (!map || !selectedPlaceId) return;

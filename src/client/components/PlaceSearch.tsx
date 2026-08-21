@@ -51,6 +51,7 @@ export function PlaceSearch({
             placeId: place.id,
             displayName: place.displayName ?? undefined,
             location: place.location.toJSON(),
+            source: "search",
           });
         } catch {
           setError(true);

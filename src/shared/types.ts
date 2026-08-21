@@ -62,4 +62,5 @@ export type SelectedPlace = {
   placeId: string;
   displayName?: string;
   location?: google.maps.LatLngLiteral;
+  source?: "search";
 };

@@ -10,6 +10,7 @@
     "dev": "node scripts/dev.mjs",
     "build:watch": "vite build --watch",
     "lint": "eslint .",
+    "setup-production": "node scripts/setup-production.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",

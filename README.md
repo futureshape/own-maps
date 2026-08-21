@@ -39,7 +39,34 @@ Google owns place identity and live place presentation. D1 stores map ownership,
 - Node.js 24+
 - a Cloudflare account with Workers and D1
 - a Google Cloud project with billing enabled for Google Maps Platform
-- Wrangler authenticated locally (`npx wrangler login`)
+- the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
+- the [GitHub CLI](https://cli.github.com/) if you want the script to configure GitHub Actions
+
+## Automated production setup (recommended)
+
+After cloning the repository, install dependencies and run the production bootstrap:
+
+```bash
+npm ci
+npm run setup-production
+```
+
+The command prompts you to sign in to Google Cloud, Cloudflare, and GitHub, then asks you to select the Google billing project and Cloudflare account. It enables the required Google APIs, creates restricted browser and Worker-only API keys, creates a vector JavaScript map ID, provisions D1, applies migrations, writes the ignored local env files, builds the app, stores Worker secrets, deploys the Worker, and uploads the build-time values to GitHub Actions. It is safe to rerun: resources created by the script are found by their stable names and reused.
+
+There are two required manual Google OAuth interactions because Google does not expose OAuth web-client creation through this setup flow:
+
+1. When prompted, create a **Web application** OAuth client, authorize `http://localhost:8787`, and paste its client ID into the terminal.
+2. After Cloudflare reports the final production URL, add that exact origin to the same OAuth client and press Enter.
+
+The initial deployment uses your interactive Wrangler login. GitHub Actions needs a separate, non-interactive Cloudflare API token; Cloudflare deliberately does not let Wrangler export its browser-login credential. The script offers to upload a narrow token with hidden input. If you skip it, validation remains configured but production deployment is disabled until you add `CLOUDFLARE_API_TOKEN` and set the repository variable `CLOUDFLARE_DEPLOY_ENABLED` to `true`.
+
+For a known custom hostname already managed by the selected Cloudflare account, configure its custom-domain route and authorize it during the same run:
+
+```bash
+npm run setup-production -- --production-origin=https://maps.example.com
+```
+
+Use `--skip-github` if this installation will not use GitHub Actions. Run `npm run setup-production -- --help` for all options. The sections below document the equivalent manual setup and remain useful for troubleshooting.
 
 ## Local development
 
@@ -127,7 +154,7 @@ Places UI Kit for Maps JavaScript is experimental and the app deliberately isola
 
 If Google changes these custom elements, those two adapters are the intended update surface. Review Google's current [Place Details Element documentation](https://developers.google.com/maps/documentation/javascript/places-ui-kit/place-details) and [Place Autocomplete documentation](https://developers.google.com/maps/documentation/javascript/place-autocomplete-new) before upgrading the Maps API channel.
 
-## First Cloudflare bootstrap
+## Manual Cloudflare bootstrap
 
 Create the production database:
 
@@ -135,7 +162,7 @@ Create the production database:
 npx wrangler d1 create own-maps-prod
 ```
 
-Replace the all-zero `database_id` in `wrangler.jsonc` with the returned UUID and commit that change. Then store the Google client ID and Static Maps preview key as Worker secrets/bindings:
+Replace the existing `database_id` in `wrangler.jsonc` with the returned UUID and commit that change. Then store the Google client ID and Static Maps preview key as Worker secrets/bindings:
 
 ```bash
 npx wrangler secret put GOOGLE_CLIENT_ID
